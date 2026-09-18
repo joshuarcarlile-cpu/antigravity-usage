@@ -75,7 +75,11 @@
   "rate_limits": {
     "weekly_token_limit": 500000000,
     "five_hour_token_limit": 50000000,
-    "weekly_reset_day": "Sun",
-    "weekly_reset_time_utc": "00:00"
+    "account_resets": {
+      "joshua.r.carlile@gmail.com": {
+        "reset_day": "Tue",
+        "reset_time_utc": "22:00"
+      }
+    }
   }
 }

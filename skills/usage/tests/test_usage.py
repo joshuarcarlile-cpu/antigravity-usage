@@ -258,6 +258,76 @@ class TestUsageEngine(unittest.TestCase):
         }
         self.assertIsNone(payload["daily_totals"])
 
+    def test_account_resolution_and_reset_schedule(self):
+        """12. Assert user accounts get distinct reset schedules and respect explicit overrides."""
+        # 1. Detection priority
+        cli_acc = usage.get_active_account(cli_account="test@override.com")
+        self.assertEqual(cli_acc["account"], "test@override.com")
+        self.assertEqual(cli_acc["source"], "cli")
+
+        # 2. Account schedule differentiation (no everyone resets at the same time)
+        acc1 = "alice.dev@company.com"
+        acc2 = "bob.engineer@startup.io"
+        sched1 = usage.resolve_account_reset_schedule(acc1, self.pricing)
+        sched2 = usage.resolve_account_reset_schedule(acc2, self.pricing)
+
+        # Confirm both accounts have deterministic valid schedules
+        self.assertIn(sched1["reset_day"], usage.DAYS_OF_WEEK)
+        self.assertIn(sched2["reset_day"], usage.DAYS_OF_WEEK)
+        # Verify they don't have identical schedule slots
+        slot1 = (sched1["reset_day"], sched1["reset_time_utc"])
+        slot2 = (sched2["reset_day"], sched2["reset_time_utc"])
+        self.assertNotEqual(slot1, slot2, "Different user accounts must receive distinct reset schedule slots")
+
+        # 3. Explicit CLI override
+        custom_sched = usage.resolve_account_reset_schedule(
+            acc1, self.pricing, cli_day="Friday", cli_time="16:30"
+        )
+        self.assertEqual(custom_sched["reset_day"], "Fri")
+        self.assertEqual(custom_sched["reset_time_utc"], "16:30")
+        self.assertTrue(custom_sched["is_custom"])
+
+        # 4. 7-day cycle math invariant
+        fixed_now = datetime(2026, 9, 18, 12, 0, 0, tzinfo=timezone.utc)
+        nr, lr, res_str = usage.compute_account_weekly_window("Fri", "16:30", fixed_now)
+        cycle_length = (nr - lr).total_seconds()
+        self.assertEqual(cycle_length, 7 * 86400, "Reset window cycle must span precisely 7 days")
+        self.assertGreater(nr, fixed_now)
+        self.assertLessEqual(lr, fixed_now)
+
+    def test_render_box_active_account(self):
+        """13. Assert Active Account is displayed in the terminal box header and correctly formatted."""
+        mock_data = {
+            "account": {"account": "joshua.r.carlile@gmail.com", "source": "google_accounts.json"},
+            "model": {"id": "gemini-3.8-flash", "resolved": True},
+            "provenance": {"mode": "reported", "reported_turns": 1, "estimated_turns": 0, "total_turns": 1},
+            "context_window": {"occupancy_tokens": 1000, "limit_tokens": 1000000, "headroom_tokens": 999000, "utilization_pct": 0.1},
+            "tokens": {"cumulative_input": 1000, "uncached_input": 1000, "cached_input": 0, "cumulative_output": 100, "multimodal_items": 0, "multimodal_tokens": 0},
+            "cost": {"equivalent_usd": 0.05, "currency": "USD", "priced_turns": 1, "total_turns": 1, "assumed_rates": []},
+            "activity": {"wall_duration_seconds": 12.0, "total_steps": 5, "model_turns": 1, "tool_counts": {}},
+            "rate_limits": {
+                "account": "joshua.r.carlile@gmail.com",
+                "weekly": {
+                    "used_tokens": 25000000,
+                    "limit_tokens": 500000000,
+                    "utilization_pct": 5.0,
+                    "resets_str": "in 4d 17h (Tue 22:00 UTC)"
+                },
+                "five_hour": {
+                    "used_tokens": 2500000,
+                    "limit_tokens": 50000000,
+                    "utilization_pct": 5.0,
+                    "resets_str": "in 1h 45m"
+                }
+            }
+        }
+        rendered = usage.render_box(mock_data, width=64, cid="test-acc-box")
+        self.assertIn("Active Account: joshua.r.carlile@gmail.com", rendered)
+        self.assertIn("Weekly Limit (resets in 4d 17h (Tue 22:00 UTC)):", rendered)
+        self.assertIn("5-Hour Limit (resets in 1h 45m):", rendered)
+        for line in rendered.split("\n"):
+            self.assertEqual(len(usage.strip_ansi(line)), 64, f"Line width violation in: {line}")
+
 
 if __name__ == "__main__":
     unittest.main()

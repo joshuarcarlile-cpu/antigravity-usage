@@ -5,12 +5,13 @@ A production-grade, mathematically verified telemetry and cost engine for **Goog
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ Google Antigravity Telemetry                                 │
+│ Active Account: joshua.r.carlile@gmail.com                   │
 │ Target Session: 025c7515-7b3f-4cee-95be-aa616bf5f9da         │
 │ Active Model: gemini-3.8-flash                               │
 │ Provenance: ESTIMATED (0 reported, 97 estimated)             │
 ├──────────────────────────────────────────────────────────────┤
 │ Rate Limits & Quotas:                                        │
-│ Weekly Limit (resets in 1d 20h):                             │
+│ Weekly Limit (resets in 4d 17h (Tue 22:00 UTC)):             │
 │ [████████░░░░░░░░] 47.2% (236.0M/500.0M tokens)              │
 │ 5-Hour Limit (resets in 3h 3m):                              │
 │ [████████████░░░░] 78.1% (39.1M/50.0M tokens)                │
@@ -134,8 +135,14 @@ or
 The installer exposes the `usage` CLI tool directly:
 
 ```powershell
-# Inspect the most recent active session
+# Inspect the most recent active session (auto-detects account and reset schedule)
 usage
+
+# Bind or inspect a specific user account
+usage --account alice@dev.org
+
+# Set an explicit weekly reset schedule for the active account and save it permanently
+usage --reset-day Wed --reset-time 18:00 --save-reset
 
 # Pin a specific conversation ID
 usage --conversation-id 025c7515-7b3f-4cee-95be-aa616bf5f9da

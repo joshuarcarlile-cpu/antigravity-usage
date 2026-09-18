@@ -10,6 +10,7 @@ import json
 import re
 import math
 import time
+import base64
 import hashlib
 import glob
 import argparse
@@ -76,6 +77,262 @@ def get_engine_hash(script_path: str, pricing_path: str) -> str:
             with open(p, "rb") as f:
                 h.update(f.read())
     return h.hexdigest()
+
+
+DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+DAY_NAME_MAP = {
+    "mon": "Mon", "monday": "Mon",
+    "tue": "Tue", "tues": "Tue", "tuesday": "Tue",
+    "wed": "Wed", "wednesday": "Wed",
+    "thu": "Thu", "thur": "Thu", "thurs": "Thu", "thursday": "Thu",
+    "fri": "Fri", "friday": "Fri",
+    "sat": "Sat", "saturday": "Sat",
+    "sun": "Sun", "sunday": "Sun"
+}
+
+
+def get_active_account(cli_account: str = None) -> dict:
+    """
+    Resolve active user account identity.
+    Priority:
+    1. Explicit CLI argument (--account)
+    2. Environment variable (GEMINI_ACCOUNT or ANTIGRAVITY_ACCOUNT)
+    3. ~/.gemini/google_accounts.json ('active' key)
+    4. ~/.gemini/oauth_creds.json (id_token JWT email claim)
+    5. OS username fallback
+    """
+    if cli_account and cli_account.strip():
+        return {
+            "account": cli_account.strip(),
+            "source": "cli",
+            "name": None
+        }
+
+    env_acc = os.environ.get("GEMINI_ACCOUNT") or os.environ.get("ANTIGRAVITY_ACCOUNT")
+    if env_acc and env_acc.strip():
+        return {
+            "account": env_acc.strip(),
+            "source": "env",
+            "name": None
+        }
+
+    home = get_user_home()
+    ga_path = os.path.join(home, ".gemini", "google_accounts.json")
+    if os.path.exists(ga_path):
+        try:
+            with open(ga_path, "r", encoding="utf-8") as f:
+                ga_data = json.load(f)
+            active_email = ga_data.get("active")
+            if active_email and str(active_email).strip():
+                return {
+                    "account": str(active_email).strip(),
+                    "source": "google_accounts.json",
+                    "name": None
+                }
+        except Exception:
+            pass
+
+    oauth_path = os.path.join(home, ".gemini", "oauth_creds.json")
+    if os.path.exists(oauth_path):
+        try:
+            with open(oauth_path, "r", encoding="utf-8") as f:
+                oauth_data = json.load(f)
+            id_token = oauth_data.get("id_token")
+            if id_token and "." in id_token:
+                parts = id_token.split(".")
+                if len(parts) >= 2:
+                    payload_b64 = parts[1]
+                    rem = len(payload_b64) % 4
+                    if rem > 0:
+                        payload_b64 += "=" * (4 - rem)
+                    payload_json = base64.urlsafe_b64decode(payload_b64.encode("utf-8")).decode("utf-8")
+                    payload = json.loads(payload_json)
+                    email = payload.get("email")
+                    name = payload.get("name")
+                    if email and str(email).strip():
+                        return {
+                            "account": str(email).strip(),
+                            "source": "oauth_creds.json",
+                            "name": name
+                        }
+        except Exception:
+            pass
+
+    sys_user = os.environ.get("USERNAME") or os.environ.get("USER") or "default_user"
+    return {
+        "account": str(sys_user).strip(),
+        "source": "system",
+        "name": None
+    }
+
+
+def normalize_reset_day(day_str: str) -> str:
+    """Normalize day string into 3-letter abbreviation (e.g. Mon, Tue)."""
+    if not day_str:
+        return "Sun"
+    clean = day_str.strip().lower()
+    return DAY_NAME_MAP.get(clean, "Sun")
+
+
+def normalize_reset_time(time_str: str) -> str:
+    """Normalize time string into HH:MM (UTC)."""
+    if not time_str:
+        return "00:00"
+    clean = str(time_str).strip().upper().replace("UTC", "").strip()
+    pm = "PM" in clean
+    am = "AM" in clean
+    clean = clean.replace("PM", "").replace("AM", "").strip()
+    if ":" in clean:
+        parts = clean.split(":")
+        try:
+            h = int(parts[0])
+            m = int(parts[1]) if len(parts) > 1 else 0
+        except ValueError:
+            h, m = 0, 0
+    else:
+        try:
+            h = int(clean)
+            m = 0
+        except ValueError:
+            h, m = 0, 0
+    if pm and h < 12:
+        h += 12
+    if am and h == 12:
+        h = 0
+    h = max(0, min(23, h))
+    m = max(0, min(59, m))
+    return f"{h:02d}:{m:02d}"
+
+
+def get_account_resets_config_path() -> str:
+    home = get_user_home()
+    return os.path.join(home, ".gemini", "account_resets.json")
+
+
+def load_user_account_resets() -> dict:
+    cpath = get_account_resets_config_path()
+    if os.path.exists(cpath):
+        try:
+            with open(cpath, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_user_account_reset(account: str, reset_day: str, reset_time_utc: str) -> bool:
+    cpath = get_account_resets_config_path()
+    try:
+        os.makedirs(os.path.dirname(cpath), exist_ok=True)
+        resets = load_user_account_resets()
+        resets[account.strip().lower()] = {
+            "reset_day": reset_day,
+            "reset_time_utc": reset_time_utc,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        with open(cpath, "w", encoding="utf-8") as f:
+            json.dump(resets, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def resolve_account_reset_schedule(
+    account: str,
+    pricing_config: dict,
+    cli_day: str = None,
+    cli_time: str = None
+) -> dict:
+    """
+    Resolve user account weekly reset schedule.
+    Ties rate limits directly to the user's specific account.
+    Hierarchy:
+    1. CLI overrides (--reset-day, --reset-time)
+    2. Local user config (~/.gemini/account_resets.json)
+    3. pricing.json rate_limits.account_resets[account]
+    4. Deterministic SHA-256 account derivation (so different accounts never reset at the same time)
+    """
+    acc_norm = account.strip().lower()
+
+    if cli_day or cli_time:
+        day = normalize_reset_day(cli_day) if cli_day else "Sun"
+        t_utc = normalize_reset_time(cli_time) if cli_time else "00:00"
+        return {
+            "account": account,
+            "reset_day": day,
+            "reset_time_utc": t_utc,
+            "source": "cli_override",
+            "is_custom": True
+        }
+
+    # Check ~/.gemini/account_resets.json
+    user_resets = load_user_account_resets()
+    if acc_norm in user_resets:
+        cfg = user_resets[acc_norm]
+        return {
+            "account": account,
+            "reset_day": normalize_reset_day(cfg.get("reset_day")),
+            "reset_time_utc": normalize_reset_time(cfg.get("reset_time_utc")),
+            "source": "user_config",
+            "is_custom": True
+        }
+
+    # Check pricing.json rate_limits.account_resets or top-level account_resets
+    rl_cfg = pricing_config.get("rate_limits", {})
+    acct_resets = rl_cfg.get("account_resets") or pricing_config.get("account_resets", {})
+    if isinstance(acct_resets, dict) and acc_norm in acct_resets:
+        cfg = acct_resets[acc_norm]
+        return {
+            "account": account,
+            "reset_day": normalize_reset_day(cfg.get("reset_day")),
+            "reset_time_utc": normalize_reset_time(cfg.get("reset_time_utc")),
+            "source": "pricing_config",
+            "is_custom": True
+        }
+
+    # Deterministic account derivation (ensures independent, staggered reset for every account)
+    h = hashlib.sha256(acc_norm.encode("utf-8")).digest()
+    day = DAYS_OF_WEEK[h[0] % 7]
+    hour = h[1] % 24
+    minute = (h[2] % 4) * 15
+    t_utc = f"{hour:02d}:{minute:02d}"
+    return {
+        "account": account,
+        "reset_day": day,
+        "reset_time_utc": t_utc,
+        "source": "account_hash",
+        "is_custom": False
+    }
+
+
+def compute_account_weekly_window(reset_day: str, reset_time_utc: str, now: datetime = None):
+    """
+    Given a user account's reset day and time (UTC), compute:
+    - next_reset datetime (UTC)
+    - last_reset datetime (UTC, 7 days prior to next_reset)
+    - countdown string (e.g. 'in 4d 18h (Tue 22:00 UTC)')
+    """
+    now = now or datetime.now(timezone.utc)
+    day_idx = DAYS_OF_WEEK.index(reset_day) if reset_day in DAYS_OF_WEEK else 6
+    h_str, m_str = reset_time_utc.split(":")
+    target_hour = int(h_str)
+    target_minute = int(m_str)
+
+    days_ahead = (day_idx - now.weekday()) % 7
+    if days_ahead == 0:
+        target_today = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+        if now >= target_today:
+            days_ahead = 7
+
+    next_reset = (now + timedelta(days=days_ahead)).replace(
+        hour=target_hour, minute=target_minute, second=0, microsecond=0
+    )
+    last_reset = next_reset - timedelta(days=7)
+    diff = next_reset - now
+    days = diff.days
+    hours = diff.seconds // 3600
+    resets_str = f"in {days}d {hours}h ({reset_day} {reset_time_utc} UTC)"
+    return next_reset, last_reset, resets_str
 
 
 def structural_tokenize(text: str) -> int:
@@ -597,29 +854,45 @@ def compute_daily_totals(pricing_config: dict, engine_hash: str) -> dict:
     }
 
 
-def compute_rate_limits(pricing_config: dict, engine_hash: str) -> dict:
+def compute_rate_limits(
+    pricing_config: dict,
+    engine_hash: str,
+    account_info: dict = None,
+    cli_day: str = None,
+    cli_time: str = None
+) -> dict:
     """
     Compute rolling 5-hour session limit and weekly limit against configured quotas.
+    Ties the weekly reset schedule directly to the active user account.
     Returns weekly limit and 5-hour limit data with visual utilization and reset countdowns.
     """
     brain_root = get_brain_root()
     now = datetime.now(timezone.utc)
     five_hours_ago = now - timedelta(hours=5)
-    seven_days_ago = now - timedelta(days=7)
+
+    if not account_info:
+        account_info = get_active_account()
+
+    account_id = account_info.get("account", "default_user")
+    schedule = resolve_account_reset_schedule(account_id, pricing_config, cli_day, cli_time)
+    next_reset, last_reset, weekly_reset_str = compute_account_weekly_window(
+        schedule["reset_day"], schedule["reset_time_utc"], now
+    )
 
     rl_cfg = pricing_config.get("rate_limits", {})
-    weekly_limit = rl_cfg.get("weekly_token_limit", 10000000)
-    five_hour_limit = rl_cfg.get("five_hour_token_limit", 1000000)
+    weekly_limit = rl_cfg.get("weekly_token_limit", 500000000)
+    five_hour_limit = rl_cfg.get("five_hour_token_limit", 50000000)
 
     tokens_5h = 0
-    tokens_7d = 0
+    tokens_weekly = 0
     oldest_turn_5h = None
 
     transcripts = glob.glob(os.path.join(brain_root, "*", ".system_generated", "logs", "transcript_full.jsonl"))
 
     for t_path in transcripts:
         t_mtime = os.path.getmtime(t_path)
-        if (time.time() - t_mtime) > 7 * 86400:
+        # Scan transcripts updated within past 8 days to cover full 7-day weekly reset cycle
+        if (time.time() - t_mtime) > 8 * 86400:
             continue
 
         norm = os.path.normpath(t_path)
@@ -635,24 +908,14 @@ def compute_rate_limits(pricing_config: dict, engine_hash: str) -> dict:
             for t_item in sdata.get("turns_summary", []):
                 t_dt = parse_timestamp_iso(t_item["ts"])
                 tok = t_item.get("tokens", 0)
-                if t_dt >= seven_days_ago:
-                    tokens_7d += tok
+                if t_dt >= last_reset:
+                    tokens_weekly += tok
                 if t_dt >= five_hours_ago:
                     tokens_5h += tok
                     if oldest_turn_5h is None or t_dt < oldest_turn_5h:
                         oldest_turn_5h = t_dt
         except Exception:
             continue
-
-    # Next weekly reset (default Sunday 00:00 UTC)
-    days_ahead = (6 - now.weekday()) % 7
-    if days_ahead == 0 and now.hour == 0 and now.minute == 0:
-        days_ahead = 7
-    next_reset = (now + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
-    diff_w = next_reset - now
-    days = diff_w.days
-    hours = diff_w.seconds // 3600
-    weekly_reset_str = f"in {days}d {hours}h"
 
     if tokens_5h > 0 and oldest_turn_5h:
         reset_time = oldest_turn_5h + timedelta(hours=5)
@@ -667,12 +930,21 @@ def compute_rate_limits(pricing_config: dict, engine_hash: str) -> dict:
     else:
         five_hour_reset_str = "idle"
 
-    weekly_pct = round((tokens_7d / weekly_limit) * 100, 1) if weekly_limit > 0 else 0.0
+    weekly_pct = round((tokens_weekly / weekly_limit) * 100, 1) if weekly_limit > 0 else 0.0
     five_hour_pct = round((tokens_5h / five_hour_limit) * 100, 1) if five_hour_limit > 0 else 0.0
 
     return {
+        "account": account_id,
+        "reset_schedule": {
+            "reset_day": schedule["reset_day"],
+            "reset_time_utc": schedule["reset_time_utc"],
+            "is_custom": schedule["is_custom"],
+            "source": schedule["source"],
+            "next_reset_utc": next_reset.isoformat(),
+            "last_reset_utc": last_reset.isoformat()
+        },
         "weekly": {
-            "used_tokens": tokens_7d,
+            "used_tokens": tokens_weekly,
             "limit_tokens": weekly_limit,
             "utilization_pct": weekly_pct,
             "resets_str": weekly_reset_str
@@ -741,6 +1013,10 @@ def render_box(data: dict, width: int = DEFAULT_BOX_WIDTH, cid: str = "") -> str
     # 1. Header Section
     model_name = data["model"]["id"]
     add_row(f"{ANSI_BOLD}{ANSI_CYAN}Google Antigravity Telemetry{ANSI_RESET}")
+    acc = data.get("account")
+    if acc:
+        acc_str = acc.get("account") if isinstance(acc, dict) else str(acc)
+        add_pair("Active Account:", acc_str)
     if cid:
         cid_display = cid if len(cid) <= 36 else cid[:33] + "..."
         add_pair("Target Session:", cid_display)
@@ -873,6 +1149,10 @@ def main():
     parser = argparse.ArgumentParser(description="Google Antigravity Production Telemetry & Cost Engine")
     parser.add_argument("--conversation-id", type=str, help="Conversation UUID to inspect")
     parser.add_argument("--transcript", type=str, help="Direct path to transcript file")
+    parser.add_argument("--account", type=str, help="Active user account email or ID")
+    parser.add_argument("--reset-day", type=str, help="Weekly limit reset day (e.g. Mon, Tue, Wed...)")
+    parser.add_argument("--reset-time", type=str, help="Weekly limit reset time UTC (e.g. 18:00)")
+    parser.add_argument("--save-reset", action="store_true", help="Save the reset schedule to ~/.gemini/account_resets.json for the active account")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON v1.0.0")
     parser.add_argument("--daily", action="store_true", help="Include daily aggregation totals")
     parser.add_argument("--width", type=int, default=DEFAULT_BOX_WIDTH, help="Terminal box width (default 64)")
@@ -886,6 +1166,17 @@ def main():
     pricing_file = args.pricing if args.pricing else os.path.join(script_dir, "pricing.json")
     pricing_config = load_pricing(pricing_file)
     engine_hash = get_engine_hash(os.path.abspath(__file__), pricing_file)
+
+    account_info = get_active_account(args.account)
+    if args.save_reset:
+        day = normalize_reset_day(args.reset_day) if args.reset_day else "Sun"
+        t_utc = normalize_reset_time(args.reset_time) if args.reset_time else "00:00"
+        saved = save_user_account_reset(account_info["account"], day, t_utc)
+        if not args.json:
+            if saved:
+                print(f"{ANSI_GREEN}Saved reset schedule for {account_info['account']}: {day} {t_utc} UTC{ANSI_RESET}")
+            else:
+                print(f"{ANSI_RED}Failed to save reset schedule for {account_info['account']}{ANSI_RESET}", file=sys.stderr)
 
     cid = args.conversation_id
     transcript_path = args.transcript
@@ -939,15 +1230,23 @@ def main():
         daily_totals = None
 
     if not suppress_daily:
-        rate_limits = compute_rate_limits(pricing_config, engine_hash)
+        rate_limits = compute_rate_limits(
+            pricing_config=pricing_config,
+            engine_hash=engine_hash,
+            account_info=account_info,
+            cli_day=args.reset_day,
+            cli_time=args.reset_time
+        )
     else:
         rate_limits = None
 
     session_data["daily_totals"] = daily_totals
     session_data["rate_limits"] = rate_limits
+    session_data["account"] = account_info
 
     payload = {
         "schema_version": SCHEMA_VERSION,
+        "account": account_info,
         "conversation_id": cid or "isolated_transcript",
         "model": session_data["model"],
         "provenance": session_data["provenance"],
