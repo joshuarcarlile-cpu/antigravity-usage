@@ -441,7 +441,10 @@ def format_reset_countdown(iso_str: str, now: datetime = None, rem_frac: float =
             return f"in {days}d"
     else:
         hours = total_secs // 3600
-        mins = (total_secs % 3600) // 60
+        mins = round((total_secs % 3600) / 60)
+        if mins >= 60:
+            hours += 1
+            mins = 0
         if hours > 0:
             return f"in {hours}h {mins}m"
         else:
@@ -1094,7 +1097,10 @@ def compute_rate_limits(
         delta_5h = reset_time - now
         secs = max(0, int(delta_5h.total_seconds()))
         h_5h = secs // 3600
-        m_5h = (secs % 3600) // 60
+        m_5h = round((secs % 3600) / 60)
+        if m_5h >= 60:
+            h_5h += 1
+            m_5h = 0
         if h_5h > 0:
             five_hour_reset_str = f"in {h_5h}h {m_5h}m"
         else:
