@@ -27,7 +27,7 @@ if ($ScriptRoot -and (Test-Path (Join-Path $ScriptRoot "plugin.json"))) {
     Copy-Item -Recurse -Force (Join-Path $ScriptRoot "*") $PluginDir
 } else {
     Write-Host "-> Downloading latest release from GitHub..." -ForegroundColor Green
-    $RepoUrl = "https://github.com/google-antigravity/antigravity-usage/archive/refs/heads/main.zip"
+    $RepoUrl = "https://github.com/joshuarcarlile-cpu/antigravity-usage/archive/refs/heads/main.zip"
     $ZipPath = Join-Path $env:TEMP "antigravity-usage.zip"
     Invoke-WebRequest -Uri $RepoUrl -OutFile $ZipPath
     Expand-Archive -Path $ZipPath -DestinationPath $env:TEMP -Force

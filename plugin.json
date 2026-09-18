@@ -2,8 +2,9 @@
   "name": "antigravity-usage",
   "version": "1.0.0",
   "description": "Production-grade, mathematically verified /usage and /cost telemetry engine for Google Antigravity.",
-  "author": "Joshua",
+  "author": "Joshua Carlile",
   "license": "MIT",
+  "repository": "https://github.com/joshuarcarlile-cpu/antigravity-usage",
   "skills": ["skills/usage"],
   "rules": ["rules/telemetry.md"]
 }

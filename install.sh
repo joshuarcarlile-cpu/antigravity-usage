@@ -21,7 +21,7 @@ if [ -f "${SCRIPT_DIR}/plugin.json" ]; then
     cp -R "${SCRIPT_DIR}/"* "${PLUGIN_DIR}/"
 else
     echo "-> Downloading from GitHub..."
-    ARCHIVE_URL="https://github.com/google-antigravity/antigravity-usage/archive/refs/heads/main.tar.gz"
+    ARCHIVE_URL="https://github.com/joshuarcarlile-cpu/antigravity-usage/archive/refs/heads/main.tar.gz"
     curl -fsSL "${ARCHIVE_URL}" | tar -xz -C "${PLUGIN_DIR}" --strip-components=1
 fi
 
