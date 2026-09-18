@@ -9,6 +9,12 @@ A production-grade, mathematically verified telemetry and cost engine for **Goog
 │ Active Model: gemini-3.8-flash                               │
 │ Provenance: ESTIMATED (0 reported, 97 estimated)             │
 ├──────────────────────────────────────────────────────────────┤
+│ Rate Limits & Quotas:                                        │
+│ Weekly Limit (resets in 1d 20h):                             │
+│ [████████░░░░░░░░] 47.2% (236.0M/500.0M tokens)              │
+│ 5-Hour Limit (resets in 3h 3m):                              │
+│ [████████████░░░░] 78.1% (39.1M/50.0M tokens)                │
+├──────────────────────────────────────────────────────────────┤
 │ Context Occupancy:                                           │
 │ [█░░░░░░░░░░░░░░░] 109,262 / 1,000,000 (10.9%)               │
 │ Headroom Remaining: 890,738 tokens                           │

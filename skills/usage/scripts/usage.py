@@ -13,7 +13,7 @@ import time
 import hashlib
 import glob
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 if sys.platform == "win32":
@@ -484,7 +484,8 @@ def parse_transcript_stream(transcript_path: str, pricing_config: dict) -> dict:
             "tool_counts": tool_counts
         },
         "reconciliation_warnings": reconciliation_warnings,
-        "turn_dates": [t["local_date"] for t in turns_data]
+        "turn_dates": [t["local_date"] for t in turns_data],
+        "turns_summary": [{"ts": t["created_at"].isoformat(), "tokens": t["prompt_tokens"] + t["output_tokens"]} for t in turns_data]
     }
 
 
@@ -596,6 +597,95 @@ def compute_daily_totals(pricing_config: dict, engine_hash: str) -> dict:
     }
 
 
+def compute_rate_limits(pricing_config: dict, engine_hash: str) -> dict:
+    """
+    Compute rolling 5-hour session limit and weekly limit against configured quotas.
+    Returns weekly limit and 5-hour limit data with visual utilization and reset countdowns.
+    """
+    brain_root = get_brain_root()
+    now = datetime.now(timezone.utc)
+    five_hours_ago = now - timedelta(hours=5)
+    seven_days_ago = now - timedelta(days=7)
+
+    rl_cfg = pricing_config.get("rate_limits", {})
+    weekly_limit = rl_cfg.get("weekly_token_limit", 10000000)
+    five_hour_limit = rl_cfg.get("five_hour_token_limit", 1000000)
+
+    tokens_5h = 0
+    tokens_7d = 0
+    oldest_turn_5h = None
+
+    transcripts = glob.glob(os.path.join(brain_root, "*", ".system_generated", "logs", "transcript_full.jsonl"))
+
+    for t_path in transcripts:
+        t_mtime = os.path.getmtime(t_path)
+        if (time.time() - t_mtime) > 7 * 86400:
+            continue
+
+        norm = os.path.normpath(t_path)
+        parts = norm.split(os.sep)
+        cid = "unknown"
+        for i, p in enumerate(parts):
+            if p == ".system_generated" and i > 0:
+                cid = parts[i - 1]
+                break
+
+        try:
+            sdata = manage_cache(cid, t_path, engine_hash, pricing_config)
+            for t_item in sdata.get("turns_summary", []):
+                t_dt = parse_timestamp_iso(t_item["ts"])
+                tok = t_item.get("tokens", 0)
+                if t_dt >= seven_days_ago:
+                    tokens_7d += tok
+                if t_dt >= five_hours_ago:
+                    tokens_5h += tok
+                    if oldest_turn_5h is None or t_dt < oldest_turn_5h:
+                        oldest_turn_5h = t_dt
+        except Exception:
+            continue
+
+    # Next weekly reset (default Sunday 00:00 UTC)
+    days_ahead = (6 - now.weekday()) % 7
+    if days_ahead == 0 and now.hour == 0 and now.minute == 0:
+        days_ahead = 7
+    next_reset = (now + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
+    diff_w = next_reset - now
+    days = diff_w.days
+    hours = diff_w.seconds // 3600
+    weekly_reset_str = f"in {days}d {hours}h"
+
+    if tokens_5h > 0 and oldest_turn_5h:
+        reset_time = oldest_turn_5h + timedelta(hours=5)
+        delta_5h = reset_time - now
+        secs = max(0, int(delta_5h.total_seconds()))
+        h_5h = secs // 3600
+        m_5h = (secs % 3600) // 60
+        if h_5h > 0:
+            five_hour_reset_str = f"in {h_5h}h {m_5h}m"
+        else:
+            five_hour_reset_str = f"in {m_5h}m"
+    else:
+        five_hour_reset_str = "idle"
+
+    weekly_pct = round((tokens_7d / weekly_limit) * 100, 1) if weekly_limit > 0 else 0.0
+    five_hour_pct = round((tokens_5h / five_hour_limit) * 100, 1) if five_hour_limit > 0 else 0.0
+
+    return {
+        "weekly": {
+            "used_tokens": tokens_7d,
+            "limit_tokens": weekly_limit,
+            "utilization_pct": weekly_pct,
+            "resets_str": weekly_reset_str
+        },
+        "five_hour": {
+            "used_tokens": tokens_5h,
+            "limit_tokens": five_hour_limit,
+            "utilization_pct": five_hour_pct,
+            "resets_str": five_hour_reset_str
+        }
+    }
+
+
 def format_value_with_overflow(val_str: str, max_len: int) -> str:
     """Enforces value-side overflow parenthetical dropping and truncation."""
     if len(val_str) <= max_len:
@@ -661,6 +751,38 @@ def render_box(data: dict, width: int = DEFAULT_BOX_WIDTH, cid: str = "") -> str
     add_pair("Provenance:", prov_str)
 
     lines.append(mid_border)
+
+    # Rate Limits Section: Weekly limit first, 5-Hour limit directly under it
+    rl = data.get("rate_limits")
+    if rl:
+        add_row(f"{ANSI_BOLD}Rate Limits & Quotas:{ANSI_RESET}")
+
+        def fmt_short(n: int) -> str:
+            if n >= 1_000_000_000:
+                return f"{n/1e9:.1f}B"
+            if n >= 1_000_000:
+                return f"{n/1e6:.1f}M"
+            if n >= 1_000:
+                return f"{n/1e3:.1f}k"
+            return str(n)
+
+        # 1. Weekly Limit
+        w_data = rl["weekly"]
+        w_pct = w_data["utilization_pct"]
+        w_filled = min(16, int((min(100.0, w_pct) / 100.0) * 16))
+        w_bar = "█" * w_filled + "░" * (16 - w_filled)
+        add_row(f"Weekly Limit (resets {w_data['resets_str']}):")
+        add_pair(f"[{w_bar}]", f"{w_pct:.1f}% ({fmt_short(w_data['used_tokens'])}/{fmt_short(w_data['limit_tokens'])} tokens)")
+
+        # 2. 5-Hour Limit directly under Weekly Limit
+        f_data = rl["five_hour"]
+        f_pct = f_data["utilization_pct"]
+        f_filled = min(16, int((min(100.0, f_pct) / 100.0) * 16))
+        f_bar = "█" * f_filled + "░" * (16 - f_filled)
+        add_row(f"5-Hour Limit (resets {f_data['resets_str']}):")
+        add_pair(f"[{f_bar}]", f"{f_pct:.1f}% ({fmt_short(f_data['used_tokens'])}/{fmt_short(f_data['limit_tokens'])} tokens)")
+
+        lines.append(mid_border)
 
     # 2. Context Window & Occupancy Gauge
     cw = data["context_window"]
@@ -816,7 +938,13 @@ def main():
     else:
         daily_totals = None
 
+    if not suppress_daily:
+        rate_limits = compute_rate_limits(pricing_config, engine_hash)
+    else:
+        rate_limits = None
+
     session_data["daily_totals"] = daily_totals
+    session_data["rate_limits"] = rate_limits
 
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -824,6 +952,7 @@ def main():
         "model": session_data["model"],
         "provenance": session_data["provenance"],
         "context_window": session_data["context_window"],
+        "rate_limits": rate_limits,
         "tokens": session_data["tokens"],
         "cost": session_data["cost"],
         "activity": session_data["activity"],

@@ -173,15 +173,47 @@ class TestUsageEngine(unittest.TestCase):
             "tokens": data["tokens"],
             "cost": data["cost"],
             "activity": data["activity"],
+            "rate_limits": None,
             "daily_totals": None  # Isolated transcript null semantic
         }
         # Check required top-level keys
         expected_keys = {
             "schema_version", "conversation_id", "model", "provenance",
-            "context_window", "tokens", "cost", "activity", "daily_totals"
+            "context_window", "rate_limits", "tokens", "cost", "activity", "daily_totals"
         }
         self.assertEqual(set(payload.keys()), expected_keys)
         self.assertIsNone(payload["daily_totals"])
+
+    def test_rate_limits_weekly_and_five_hour_order(self):
+        """12. Assert Weekly limit is rendered first, and 5-Hour limit is rendered directly under it."""
+        mock_data = {
+            "model": {"id": "gemini-3.8-flash", "resolved": True},
+            "provenance": {"mode": "reported", "reported_turns": 1, "estimated_turns": 0, "total_turns": 1},
+            "context_window": {"occupancy_tokens": 1000, "limit_tokens": 1000000, "headroom_tokens": 999000, "utilization_pct": 0.1},
+            "tokens": {"cumulative_input": 1000, "uncached_input": 1000, "cached_input": 0, "cumulative_output": 100, "multimodal_items": 0, "multimodal_tokens": 0},
+            "cost": {"equivalent_usd": 0.05, "currency": "USD", "priced_turns": 1, "total_turns": 1, "assumed_rates": []},
+            "activity": {"wall_duration_seconds": 12.0, "total_steps": 5, "model_turns": 1, "tool_counts": {}},
+            "rate_limits": {
+                "weekly": {
+                    "used_tokens": 25000000,
+                    "limit_tokens": 500000000,
+                    "utilization_pct": 5.0,
+                    "resets_str": "in 2d 14h"
+                },
+                "five_hour": {
+                    "used_tokens": 2500000,
+                    "limit_tokens": 50000000,
+                    "utilization_pct": 5.0,
+                    "resets_str": "in 1h 45m"
+                }
+            }
+        }
+        rendered = usage.render_box(mock_data, width=64, cid="test-rl")
+        weekly_idx = rendered.find("Weekly Limit")
+        five_hour_idx = rendered.find("5-Hour Limit")
+        self.assertNotEqual(weekly_idx, -1)
+        self.assertNotEqual(five_hour_idx, -1)
+        self.assertLess(weekly_idx, five_hour_idx, "Weekly limit must appear before 5-Hour limit")
 
         # Check suppression null semantics when model is unresolvable
         unpriced_fixture = os.path.join(self.fixtures_dir, "fixture_empty.jsonl")
