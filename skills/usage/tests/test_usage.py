@@ -380,10 +380,11 @@ class TestUsageEngine(unittest.TestCase):
         self.assertIn("Rate Limits & Quotas (Antigravity Service):", rendered)
         self.assertIn("[Gemini Models]", rendered)
         self.assertIn("Weekly Limit Remaining (resets in 5d 1h):", rendered)
-        self.assertIn("5-Hour Limit Remaining (resets in 2h 54m):", rendered)
+        self.assertIn("Five Hour Limit Remaining (resets in 2h 54m):", rendered)
         self.assertIn("[Claude and GPT models]", rendered)
         self.assertIn("Weekly Limit Remaining (resets in 23h 31m):", rendered)
-        self.assertIn("5-Hour Limit Remaining:", rendered)
+        self.assertIn("Five Hour Limit Remaining:", rendered)
+        self.assertIn("100%", rendered)
         for line in rendered.split("\n"):
             self.assertEqual(len(usage.strip_ansi(line)), 64, f"Line width violation: {line}")
 

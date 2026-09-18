@@ -417,9 +417,9 @@ def fetch_live_antigravity_quota() -> dict:
     return None
 
 
-def format_reset_countdown(iso_str: str, now: datetime = None) -> str:
-    """Format an ISO timestamp into Antigravity UI-style reset countdown (e.g. 'in 5d 1h' or 'in 2h 47m')."""
-    if not iso_str:
+def format_reset_countdown(iso_str: str, now: datetime = None, rem_frac: float = 0.0) -> str:
+    """Format an ISO timestamp into Antigravity UI-style reset countdown (e.g. 'in 5d 1h', 'in 5d', or 'in 2h 47m')."""
+    if not iso_str or rem_frac >= 0.9999:
         return "idle"
     now = now or datetime.now(timezone.utc)
     iso_clean = iso_str.replace("Z", "+00:00")
@@ -430,15 +430,15 @@ def format_reset_countdown(iso_str: str, now: datetime = None) -> str:
     diff = dt - now
     total_secs = int(diff.total_seconds())
     if total_secs <= 0:
-        return "ready"
+        return "idle"
     days = diff.days
     if days > 0:
         rem_secs = total_secs - (days * 86400)
-        hours = round(rem_secs / 3600)
-        if hours >= 24:
-            days += 1
-            hours = 0
-        return f"in {days}d {hours}h"
+        hours = rem_secs // 3600
+        if hours > 0:
+            return f"in {days}d {hours}h"
+        else:
+            return f"in {days}d"
     else:
         hours = total_secs // 3600
         mins = (total_secs % 3600) // 60
@@ -1001,7 +1001,7 @@ def compute_rate_limits(
                 rem_pct = round(rem_frac * 100, 1)
                 used_pct = round(max(0.0, (1.0 - rem_frac) * 100), 1)
                 res_time = b.get("resetTime")
-                res_str = format_reset_countdown(res_time, now)
+                res_str = format_reset_countdown(res_time, now, rem_frac)
 
                 b_info = {
                     "bucket_id": bid,
@@ -1214,24 +1214,26 @@ def render_box(data: dict, width: int = DEFAULT_BOX_WIDTH, cid: str = "") -> str
                 add_row(f"{ANSI_BOLD}[{g['name']}]{ANSI_RESET}")
                 w_bucket = g.get("weekly")
                 if w_bucket:
-                    rem_pct = w_bucket.get("remaining_pct", 100.0)
-                    used_pct = w_bucket.get("utilization_pct", 0.0)
-                    filled = min(16, int((min(100.0, rem_pct) / 100.0) * 16))
+                    rem_pct = int(round(w_bucket.get("remaining_pct", 100.0)))
+                    used_pct = 100 - rem_pct
+                    filled = min(16, int((rem_pct / 100.0) * 16))
                     bar = "█" * filled + "░" * (16 - filled)
                     cd_str = f" (resets {w_bucket['resets_str']})" if w_bucket.get('resets_str') != "idle" else ""
                     add_row(f"  Weekly Limit Remaining{cd_str}:")
-                    add_pair(f"  [{bar}]", f"{rem_pct:.1f}% remaining ({used_pct:.1f}% used)")
+                    add_pair(f"  [{bar}]", f"{rem_pct}% ({used_pct}% used)")
 
                 f_bucket = g.get("five_hour")
                 if f_bucket:
-                    rem_pct = f_bucket.get("remaining_pct", 100.0)
-                    used_pct = f_bucket.get("utilization_pct", 0.0)
-                    filled = min(16, int((min(100.0, rem_pct) / 100.0) * 16))
+                    rem_pct = int(round(f_bucket.get("remaining_pct", 100.0)))
+                    used_pct = 100 - rem_pct
+                    filled = min(16, int((rem_pct / 100.0) * 16))
                     bar = "█" * filled + "░" * (16 - filled)
                     cd_str = f" (resets {f_bucket['resets_str']})" if f_bucket.get('resets_str') != "idle" else ""
-                    add_row(f"  5-Hour Limit Remaining{cd_str}:")
-                    status_note = "idle" if rem_pct >= 100.0 and f_bucket.get('resets_str') == "idle" else f"{used_pct:.1f}% used"
-                    add_pair(f"  [{bar}]", f"{rem_pct:.1f}% remaining ({status_note})")
+                    add_row(f"  Five Hour Limit Remaining{cd_str}:")
+                    if rem_pct >= 100 and f_bucket.get('resets_str') == "idle":
+                        add_pair(f"  [{bar}]", "100%")
+                    else:
+                        add_pair(f"  [{bar}]", f"{rem_pct}% ({used_pct}% used)")
         else:
             add_row(f"{ANSI_BOLD}Rate Limits & Quotas:{ANSI_RESET}")
 
@@ -1320,7 +1322,10 @@ def render_box(data: dict, width: int = DEFAULT_BOX_WIDTH, cid: str = "") -> str
         add_pair("Equivalent USD:", cost_str)
 
     if cost.get("assumed_rates"):
-        add_row(f"{ANSI_DIM}*Inferred cache rate. Antigravity quotas not observable.{ANSI_RESET}")
+        if rl and rl.get("mode") == "live_service":
+            add_row(f"{ANSI_DIM}*Inferred cache rate. Quota synced via Antigravity.{ANSI_RESET}")
+        else:
+            add_row(f"{ANSI_DIM}*Inferred cache rate. Antigravity quotas not observable.{ANSI_RESET}")
 
     for warn in data.get("reconciliation_warnings", []):
         add_row(f"{ANSI_YELLOW}[Reconciliation Warning: {warn}]{ANSI_RESET}")
