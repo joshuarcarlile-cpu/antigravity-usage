@@ -388,6 +388,56 @@ class TestUsageEngine(unittest.TestCase):
         for line in rendered.split("\n"):
             self.assertEqual(len(usage.strip_ansi(line)), 64, f"Line width violation: {line}")
 
+    def test_universal_brain_roots_and_transcript_discovery(self):
+        """15. Assert multi-root brain resolution and transcript aggregation across roots."""
+        import tempfile
+        import shutil
+        from unittest.mock import patch
+
+        roots = usage.get_brain_roots()
+        self.assertIsInstance(roots, list)
+        self.assertGreater(len(roots), 0)
+
+        # Test multi-root transcript discovery with temporary directories
+        temp_dir = tempfile.mkdtemp(prefix="agy_test_roots_")
+        try:
+            root1 = os.path.join(temp_dir, "root1")
+            root2 = os.path.join(temp_dir, "root2")
+
+            # Create cid-1 in root1 with both full and std transcripts
+            c1_logs = os.path.join(root1, "cid-1", ".system_generated", "logs")
+            os.makedirs(c1_logs, exist_ok=True)
+            with open(os.path.join(c1_logs, "transcript.jsonl"), "w") as f:
+                f.write("{}\n")
+            full_path = os.path.join(c1_logs, "transcript_full.jsonl")
+            with open(full_path, "w") as f:
+                f.write("{}\n")
+
+            # Create cid-2 in root2 with only std transcript
+            c2_logs = os.path.join(root2, "cid-2", ".system_generated", "logs")
+            os.makedirs(c2_logs, exist_ok=True)
+            std_path = os.path.join(c2_logs, "transcript.jsonl")
+            with open(std_path, "w") as f:
+                f.write("{}\n")
+
+            with patch("usage.get_brain_roots", return_value=[root1, root2]):
+                transcripts = usage.find_all_transcripts()
+                self.assertIn("cid-1", transcripts)
+                self.assertIn("cid-2", transcripts)
+                # Prefers transcript_full.jsonl for cid-1
+                self.assertEqual(os.path.abspath(transcripts["cid-1"]), os.path.abspath(full_path))
+                # Falls back to transcript.jsonl for cid-2
+                self.assertEqual(os.path.abspath(transcripts["cid-2"]), os.path.abspath(std_path))
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_dual_config_paths(self):
+        """16. Assert account resets config path resolves to a valid account_resets.json path."""
+        p = usage.get_account_resets_config_path()
+        self.assertIsInstance(p, str)
+        self.assertTrue(p.endswith("account_resets.json"))
+
 
 if __name__ == "__main__":
     unittest.main()
+

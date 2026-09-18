@@ -53,10 +53,125 @@ def get_user_home() -> str:
     return os.environ.get("USERPROFILE") or os.environ.get("HOME") or os.path.expanduser("~")
 
 
-def get_brain_root() -> str:
-    """Resolve brain root path cross-platform."""
+def get_brain_roots() -> list:
+    """
+    Resolve all potential brain root paths cross-platform and deduplicate them.
+    Supports Antigravity CLI, Antigravity IDE, custom env vars, and standard OS appdata locations.
+    """
     home = get_user_home()
-    return os.path.join(home, ".gemini", "antigravity-ide", "brain")
+    candidates = []
+
+    # 1. Environment variables
+    for env_key in ("ANTIGRAVITY_BRAIN_DIR", "GEMINI_BRAIN_DIR"):
+        v = os.environ.get(env_key)
+        if v and os.path.isdir(v):
+            candidates.append(v)
+
+    for env_key in ("ANTIGRAVITY_DATA_DIR", "GEMINI_DATA_DIR", "GEMINI_HOME", "ANTIGRAVITY_HOME"):
+        v = os.environ.get(env_key)
+        if v:
+            candidates.append(os.path.join(v, "brain"))
+            candidates.append(os.path.join(v, "antigravity", "brain"))
+            candidates.append(os.path.join(v, "antigravity-ide", "brain"))
+
+    # 2. Standard ~/.gemini and ~/.antigravity locations
+    candidates.extend([
+        os.path.join(home, ".gemini", "antigravity", "brain"),
+        os.path.join(home, ".gemini", "antigravity-ide", "brain"),
+        os.path.join(home, ".antigravity", "brain"),
+        os.path.join(home, ".gemini", "brain"),
+        os.path.join(home, ".antigravity-ide", "brain"),
+    ])
+
+    # 3. OS-specific standard application data locations
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        app_data = os.environ.get("APPDATA")
+        if local_app_data:
+            candidates.extend([
+                os.path.join(local_app_data, "Antigravity", "brain"),
+                os.path.join(local_app_data, "antigravity", "brain"),
+                os.path.join(local_app_data, "Google", "Antigravity", "brain"),
+                os.path.join(local_app_data, "Programs", "Antigravity", "brain"),
+            ])
+        if app_data:
+            candidates.extend([
+                os.path.join(app_data, "Antigravity", "brain"),
+                os.path.join(app_data, "antigravity", "brain"),
+            ])
+    elif sys.platform == "darwin":
+        candidates.extend([
+            os.path.join(home, "Library", "Application Support", "Antigravity", "brain"),
+            os.path.join(home, "Library", "Application Support", "Google", "Antigravity", "brain"),
+        ])
+    else:
+        xdg_data = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+        xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
+        candidates.extend([
+            os.path.join(xdg_data, "antigravity", "brain"),
+            os.path.join(xdg_config, "antigravity", "brain"),
+            os.path.join(home, ".local", "share", "antigravity", "brain"),
+        ])
+
+    # Canonicalize, filter existing, and preserve order while deduplicating
+    existing = []
+    seen = set()
+    for p in candidates:
+        if p and os.path.isdir(p):
+            norm = os.path.normcase(os.path.abspath(p))
+            if norm not in seen:
+                seen.add(norm)
+                existing.append(os.path.abspath(p))
+
+    # If no existing directories found yet, return primary default
+    if not existing:
+        return [os.path.join(home, ".gemini", "antigravity", "brain")]
+    return existing
+
+
+def get_brain_root() -> str:
+    """Resolve active brain root path cross-platform."""
+    return get_brain_roots()[0]
+
+
+def find_all_transcripts() -> dict:
+    """
+    Locate all unique conversation transcripts across all brain roots.
+    Returns dict mapping conversation_id -> transcript_path.
+    Prefers transcript_full.jsonl over transcript.jsonl.
+    """
+    found = {}
+    for root in get_brain_roots():
+        if not os.path.isdir(root):
+            continue
+        try:
+            entries = os.listdir(root)
+        except Exception:
+            continue
+        for entry in entries:
+            cdir = os.path.join(root, entry)
+            if not os.path.isdir(cdir):
+                continue
+            logs_dir = os.path.join(cdir, ".system_generated", "logs")
+            if not os.path.isdir(logs_dir):
+                continue
+            t_full = os.path.join(logs_dir, "transcript_full.jsonl")
+            t_std = os.path.join(logs_dir, "transcript.jsonl")
+            chosen = None
+            if os.path.exists(t_full):
+                chosen = t_full
+            elif os.path.exists(t_std):
+                chosen = t_std
+            if chosen:
+                if entry in found:
+                    try:
+                        if os.path.getmtime(chosen) > os.path.getmtime(found[entry]):
+                            found[entry] = chosen
+                    except Exception:
+                        pass
+                else:
+                    found[entry] = chosen
+    return found
 
 
 def get_cache_dir() -> str:
@@ -119,46 +234,47 @@ def get_active_account(cli_account: str = None) -> dict:
         }
 
     home = get_user_home()
-    ga_path = os.path.join(home, ".gemini", "google_accounts.json")
-    if os.path.exists(ga_path):
-        try:
-            with open(ga_path, "r", encoding="utf-8") as f:
-                ga_data = json.load(f)
-            active_email = ga_data.get("active")
-            if active_email and str(active_email).strip():
-                return {
-                    "account": str(active_email).strip(),
-                    "source": "google_accounts.json",
-                    "name": None
-                }
-        except Exception:
-            pass
+    for config_dir in (os.path.join(home, ".gemini"), os.path.join(home, ".antigravity")):
+        ga_path = os.path.join(config_dir, "google_accounts.json")
+        if os.path.exists(ga_path):
+            try:
+                with open(ga_path, "r", encoding="utf-8") as f:
+                    ga_data = json.load(f)
+                active_email = ga_data.get("active")
+                if active_email and str(active_email).strip():
+                    return {
+                        "account": str(active_email).strip(),
+                        "source": "google_accounts.json",
+                        "name": None
+                    }
+            except Exception:
+                pass
 
-    oauth_path = os.path.join(home, ".gemini", "oauth_creds.json")
-    if os.path.exists(oauth_path):
-        try:
-            with open(oauth_path, "r", encoding="utf-8") as f:
-                oauth_data = json.load(f)
-            id_token = oauth_data.get("id_token")
-            if id_token and "." in id_token:
-                parts = id_token.split(".")
-                if len(parts) >= 2:
-                    payload_b64 = parts[1]
-                    rem = len(payload_b64) % 4
-                    if rem > 0:
-                        payload_b64 += "=" * (4 - rem)
-                    payload_json = base64.urlsafe_b64decode(payload_b64.encode("utf-8")).decode("utf-8")
-                    payload = json.loads(payload_json)
-                    email = payload.get("email")
-                    name = payload.get("name")
-                    if email and str(email).strip():
-                        return {
-                            "account": str(email).strip(),
-                            "source": "oauth_creds.json",
-                            "name": name
-                        }
-        except Exception:
-            pass
+        oauth_path = os.path.join(config_dir, "oauth_creds.json")
+        if os.path.exists(oauth_path):
+            try:
+                with open(oauth_path, "r", encoding="utf-8") as f:
+                    oauth_data = json.load(f)
+                id_token = oauth_data.get("id_token")
+                if id_token and "." in id_token:
+                    parts = id_token.split(".")
+                    if len(parts) >= 2:
+                        payload_b64 = parts[1]
+                        rem = len(payload_b64) % 4
+                        if rem > 0:
+                            payload_b64 += "=" * (4 - rem)
+                        payload_json = base64.urlsafe_b64decode(payload_b64.encode("utf-8")).decode("utf-8")
+                        payload = json.loads(payload_json)
+                        email = payload.get("email")
+                        name = payload.get("name")
+                        if email and str(email).strip():
+                            return {
+                                "account": str(email).strip(),
+                                "source": "oauth_creds.json",
+                                "name": name
+                            }
+            except Exception:
+                pass
 
     sys_user = os.environ.get("USERNAME") or os.environ.get("USER") or "default_user"
     return {
@@ -169,34 +285,30 @@ def get_active_account(cli_account: str = None) -> dict:
 
 
 def normalize_reset_day(day_str: str) -> str:
-    """Normalize day string into 3-letter abbreviation (e.g. Mon, Tue)."""
+    """Normalize day string to standard 3-letter title case (e.g. 'mon' -> 'Mon')."""
     if not day_str:
         return "Sun"
-    clean = day_str.strip().lower()
-    return DAY_NAME_MAP.get(clean, "Sun")
+    cleaned = day_str.strip().lower()
+    return DAY_NAME_MAP.get(cleaned, "Sun")
 
 
 def normalize_reset_time(time_str: str) -> str:
-    """Normalize time string into HH:MM (UTC)."""
+    """Normalize user time input into HH:MM 24-hour UTC format."""
     if not time_str:
         return "00:00"
-    clean = str(time_str).strip().upper().replace("UTC", "").strip()
-    pm = "PM" in clean
-    am = "AM" in clean
-    clean = clean.replace("PM", "").replace("AM", "").strip()
+    raw = time_str.strip().lower()
+    am = "am" in raw
+    pm = "pm" in raw
+    clean = re.sub(r'[^0-9:]', '', raw)
+
     if ":" in clean:
         parts = clean.split(":")
-        try:
-            h = int(parts[0])
-            m = int(parts[1]) if len(parts) > 1 else 0
-        except ValueError:
-            h, m = 0, 0
+        h = int(parts[0]) if parts[0].isdigit() else 0
+        m = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
     else:
-        try:
-            h = int(clean)
-            m = 0
-        except ValueError:
-            h, m = 0, 0
+        h = int(clean) if clean.isdigit() else 0
+        m = 0
+
     if pm and h < 12:
         h += 12
     if am and h == 12:
@@ -208,7 +320,13 @@ def normalize_reset_time(time_str: str) -> str:
 
 def get_account_resets_config_path() -> str:
     home = get_user_home()
-    return os.path.join(home, ".gemini", "account_resets.json")
+    p1 = os.path.join(home, ".gemini", "account_resets.json")
+    if os.path.exists(p1):
+        return p1
+    p2 = os.path.join(home, ".antigravity", "account_resets.json")
+    if os.path.exists(p2):
+        return p2
+    return p1
 
 
 def load_user_account_resets() -> dict:
@@ -585,30 +703,16 @@ def calculate_turn_cost(
 
 
 def find_most_recent_transcript() -> tuple[str | None, str | None]:
-    """Auto-detect the most recently modified transcript file in the brain directory."""
-    brain_root = get_brain_root()
-    if not os.path.isdir(brain_root):
+    """Auto-detect the most recently modified transcript file across all brain directories."""
+    all_trans = find_all_transcripts()
+    if not all_trans:
         return None, None
-
-    pattern = os.path.join(brain_root, "*", ".system_generated", "logs", "transcript_full.jsonl")
-    candidates = glob.glob(pattern)
-    if not candidates:
-        pattern_fallback = os.path.join(brain_root, "*", ".system_generated", "logs", "transcript.jsonl")
-        candidates = glob.glob(pattern_fallback)
-
-    if not candidates:
-        return None, None
-
-    best_file = max(candidates, key=os.path.getmtime)
-    # Extract CID from path (parent of .system_generated)
-    norm = os.path.normpath(best_file)
-    parts = norm.split(os.sep)
-    cid = None
-    for i, p in enumerate(parts):
-        if p == ".system_generated" and i > 0:
-            cid = parts[i - 1]
-            break
-    return best_file, cid
+    try:
+        best_cid = max(all_trans.keys(), key=lambda k: os.path.getmtime(all_trans[k]))
+        return all_trans[best_cid], best_cid
+    except Exception:
+        first_cid = next(iter(all_trans))
+        return all_trans[first_cid], first_cid
 
 
 def parse_transcript_stream(transcript_path: str, pricing_config: dict) -> dict:
