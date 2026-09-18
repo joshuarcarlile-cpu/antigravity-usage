@@ -14,6 +14,8 @@ import base64
 import hashlib
 import glob
 import argparse
+import urllib.request
+import ssl
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -333,6 +335,117 @@ def compute_account_weekly_window(reset_day: str, reset_time_utc: str, now: date
     hours = diff.seconds // 3600
     resets_str = f"in {days}d {hours}h ({reset_day} {reset_time_utc} UTC)"
     return next_reset, last_reset, resets_str
+
+
+def fetch_live_antigravity_quota() -> dict:
+    """
+    Query the active Antigravity Language Server via local connect-rpc
+    to obtain real-time, official rate limit and quota bucket summaries.
+    """
+    home = get_user_home()
+    search_dirs = [
+        os.path.join(os.environ.get("APPDATA", ""), "Antigravity IDE", "logs"),
+        os.path.join(os.environ.get("APPDATA", ""), "antigravity", "logs"),
+        os.path.join(home, ".config", "Antigravity IDE", "logs"),
+        os.path.join(home, "Library", "Application Support", "Antigravity IDE", "logs"),
+    ]
+
+    log_candidates = []
+    for sdir in search_dirs:
+        if os.path.exists(sdir):
+            for log_file in glob.glob(os.path.join(sdir, "*", "ls-main.log")):
+                log_candidates.append(log_file)
+
+    if not log_candidates:
+        return None
+
+    log_candidates.sort(key=os.path.getmtime, reverse=True)
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    for log_path in log_candidates[:3]:
+        port = None
+        csrf_token = None
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                for _ in range(200):
+                    line = f.readline()
+                    if not line:
+                        break
+                    if not csrf_token:
+                        m_csrf = re.search(r"--csrf_token\s+([a-f0-9\-]+)", line)
+                        if m_csrf:
+                            csrf_token = m_csrf.group(1)
+                    if not port:
+                        m_port = re.search(r"LS started on port\s+(\d+)", line)
+                        if m_port:
+                            port = int(m_port.group(1))
+                    if port and csrf_token:
+                        break
+        except Exception:
+            continue
+
+        if not port or not csrf_token:
+            continue
+
+        url = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
+        headers = {
+            "Content-Type": "application/json",
+            "x-codeium-csrf-token": csrf_token,
+            "Connect-Protocol-Version": "1"
+        }
+        data = json.dumps({"forceRefresh": True}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=1.5) as resp:
+                if resp.status == 200:
+                    raw = resp.read().decode("utf-8", errors="ignore")
+                    payload = json.loads(raw)
+                    groups = payload.get("response", {}).get("groups", [])
+                    if groups:
+                        return {
+                            "source": "language_server_live",
+                            "port": port,
+                            "groups": groups
+                        }
+        except Exception:
+            continue
+
+    return None
+
+
+def format_reset_countdown(iso_str: str, now: datetime = None) -> str:
+    """Format an ISO timestamp into Antigravity UI-style reset countdown (e.g. 'in 5d 1h' or 'in 2h 47m')."""
+    if not iso_str:
+        return "idle"
+    now = now or datetime.now(timezone.utc)
+    iso_clean = iso_str.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(iso_clean)
+    except Exception:
+        return "idle"
+    diff = dt - now
+    total_secs = int(diff.total_seconds())
+    if total_secs <= 0:
+        return "ready"
+    days = diff.days
+    if days > 0:
+        rem_secs = total_secs - (days * 86400)
+        hours = round(rem_secs / 3600)
+        if hours >= 24:
+            days += 1
+            hours = 0
+        return f"in {days}d {hours}h"
+    else:
+        hours = total_secs // 3600
+        mins = (total_secs % 3600) // 60
+        if hours > 0:
+            return f"in {hours}h {mins}m"
+        else:
+            return f"in {mins}m"
 
 
 def structural_tokenize(text: str) -> int:
@@ -863,17 +976,76 @@ def compute_rate_limits(
 ) -> dict:
     """
     Compute rolling 5-hour session limit and weekly limit against configured quotas.
-    Ties the weekly reset schedule directly to the active user account.
-    Returns weekly limit and 5-hour limit data with visual utilization and reset countdowns.
+    Priority 1: Live Antigravity Language Server connect-rpc query (official ground truth).
+    Priority 2: Offline estimated calculation anchored to user account reset schedule.
     """
-    brain_root = get_brain_root()
     now = datetime.now(timezone.utc)
-    five_hours_ago = now - timedelta(hours=5)
-
     if not account_info:
         account_info = get_active_account()
 
     account_id = account_info.get("account", "default_user")
+
+    # 1. Attempt Live Language Server Quota Query
+    live_quota = fetch_live_antigravity_quota()
+    if live_quota and live_quota.get("groups"):
+        groups = []
+        gemini_weekly = None
+        gemini_5h = None
+
+        for g in live_quota["groups"]:
+            g_name = g.get("displayName", "Models")
+            buckets_data = {}
+            for b in g.get("buckets", []):
+                bid = b.get("bucketId", "")
+                rem_frac = b.get("remainingFraction", 1.0)
+                rem_pct = round(rem_frac * 100, 1)
+                used_pct = round(max(0.0, (1.0 - rem_frac) * 100), 1)
+                res_time = b.get("resetTime")
+                res_str = format_reset_countdown(res_time, now)
+
+                b_info = {
+                    "bucket_id": bid,
+                    "display_name": b.get("displayName", ""),
+                    "description": b.get("description", ""),
+                    "remaining_fraction": rem_frac,
+                    "remaining_pct": rem_pct,
+                    "utilization_pct": used_pct,
+                    "reset_time": res_time,
+                    "resets_str": res_str
+                }
+                if b.get("window") == "weekly" or "weekly" in bid.lower():
+                    buckets_data["weekly"] = b_info
+                elif b.get("window") == "5h" or "5h" in bid.lower() or "five" in bid.lower():
+                    buckets_data["five_hour"] = b_info
+
+            g_entry = {
+                "name": g_name,
+                "description": g.get("description", ""),
+                "weekly": buckets_data.get("weekly"),
+                "five_hour": buckets_data.get("five_hour")
+            }
+            groups.append(g_entry)
+
+            if "gemini" in g_name.lower():
+                gemini_weekly = buckets_data.get("weekly")
+                gemini_5h = buckets_data.get("five_hour")
+
+        primary_weekly = gemini_weekly or (groups[0]["weekly"] if groups and groups[0].get("weekly") else {})
+        primary_5h = gemini_5h or (groups[0]["five_hour"] if groups and groups[0].get("five_hour") else {})
+
+        return {
+            "mode": "live_service",
+            "source": "language_server_live",
+            "account": account_id,
+            "groups": groups,
+            "weekly": primary_weekly,
+            "five_hour": primary_5h
+        }
+
+    # 2. Offline Fallback Calculation (when language server is unavailable)
+    brain_root = get_brain_root()
+    five_hours_ago = now - timedelta(hours=5)
+
     schedule = resolve_account_reset_schedule(account_id, pricing_config, cli_day, cli_time)
     next_reset, last_reset, weekly_reset_str = compute_account_weekly_window(
         schedule["reset_day"], schedule["reset_time_utc"], now
@@ -934,6 +1106,7 @@ def compute_rate_limits(
     five_hour_pct = round((tokens_5h / five_hour_limit) * 100, 1) if five_hour_limit > 0 else 0.0
 
     return {
+        "mode": "estimated_offline",
         "account": account_id,
         "reset_schedule": {
             "reset_day": schedule["reset_day"],
@@ -947,12 +1120,14 @@ def compute_rate_limits(
             "used_tokens": tokens_weekly,
             "limit_tokens": weekly_limit,
             "utilization_pct": weekly_pct,
+            "remaining_pct": max(0.0, round(100.0 - weekly_pct, 1)),
             "resets_str": weekly_reset_str
         },
         "five_hour": {
             "used_tokens": tokens_5h,
             "limit_tokens": five_hour_limit,
             "utilization_pct": five_hour_pct,
+            "remaining_pct": max(0.0, round(100.0 - five_hour_pct, 1)),
             "resets_str": five_hour_reset_str
         }
     }
@@ -1031,32 +1206,63 @@ def render_box(data: dict, width: int = DEFAULT_BOX_WIDTH, cid: str = "") -> str
     # Rate Limits Section: Weekly limit first, 5-Hour limit directly under it
     rl = data.get("rate_limits")
     if rl:
-        add_row(f"{ANSI_BOLD}Rate Limits & Quotas:{ANSI_RESET}")
+        if rl.get("groups"):
+            add_row(f"{ANSI_BOLD}Rate Limits & Quotas (Antigravity Service):{ANSI_RESET}")
+            for idx, g in enumerate(rl["groups"]):
+                if idx > 0:
+                    add_row("")
+                add_row(f"{ANSI_BOLD}[{g['name']}]{ANSI_RESET}")
+                w_bucket = g.get("weekly")
+                if w_bucket:
+                    rem_pct = w_bucket.get("remaining_pct", 100.0)
+                    used_pct = w_bucket.get("utilization_pct", 0.0)
+                    filled = min(16, int((min(100.0, rem_pct) / 100.0) * 16))
+                    bar = "█" * filled + "░" * (16 - filled)
+                    cd_str = f" (resets {w_bucket['resets_str']})" if w_bucket.get('resets_str') != "idle" else ""
+                    add_row(f"  Weekly Limit Remaining{cd_str}:")
+                    add_pair(f"  [{bar}]", f"{rem_pct:.1f}% remaining ({used_pct:.1f}% used)")
 
-        def fmt_short(n: int) -> str:
-            if n >= 1_000_000_000:
-                return f"{n/1e9:.1f}B"
-            if n >= 1_000_000:
-                return f"{n/1e6:.1f}M"
-            if n >= 1_000:
-                return f"{n/1e3:.1f}k"
-            return str(n)
+                f_bucket = g.get("five_hour")
+                if f_bucket:
+                    rem_pct = f_bucket.get("remaining_pct", 100.0)
+                    used_pct = f_bucket.get("utilization_pct", 0.0)
+                    filled = min(16, int((min(100.0, rem_pct) / 100.0) * 16))
+                    bar = "█" * filled + "░" * (16 - filled)
+                    cd_str = f" (resets {f_bucket['resets_str']})" if f_bucket.get('resets_str') != "idle" else ""
+                    add_row(f"  5-Hour Limit Remaining{cd_str}:")
+                    status_note = "idle" if rem_pct >= 100.0 and f_bucket.get('resets_str') == "idle" else f"{used_pct:.1f}% used"
+                    add_pair(f"  [{bar}]", f"{rem_pct:.1f}% remaining ({status_note})")
+        else:
+            add_row(f"{ANSI_BOLD}Rate Limits & Quotas:{ANSI_RESET}")
 
-        # 1. Weekly Limit
-        w_data = rl["weekly"]
-        w_pct = w_data["utilization_pct"]
-        w_filled = min(16, int((min(100.0, w_pct) / 100.0) * 16))
-        w_bar = "█" * w_filled + "░" * (16 - w_filled)
-        add_row(f"Weekly Limit (resets {w_data['resets_str']}):")
-        add_pair(f"[{w_bar}]", f"{w_pct:.1f}% ({fmt_short(w_data['used_tokens'])}/{fmt_short(w_data['limit_tokens'])} tokens)")
+            def fmt_short(n: int) -> str:
+                if n >= 1_000_000_000:
+                    return f"{n/1e9:.1f}B"
+                if n >= 1_000_000:
+                    return f"{n/1e6:.1f}M"
+                if n >= 1_000:
+                    return f"{n/1e3:.1f}k"
+                return str(n)
 
-        # 2. 5-Hour Limit directly under Weekly Limit
-        f_data = rl["five_hour"]
-        f_pct = f_data["utilization_pct"]
-        f_filled = min(16, int((min(100.0, f_pct) / 100.0) * 16))
-        f_bar = "█" * f_filled + "░" * (16 - f_filled)
-        add_row(f"5-Hour Limit (resets {f_data['resets_str']}):")
-        add_pair(f"[{f_bar}]", f"{f_pct:.1f}% ({fmt_short(f_data['used_tokens'])}/{fmt_short(f_data['limit_tokens'])} tokens)")
+            # 1. Weekly Limit
+            w_data = rl["weekly"]
+            w_pct = w_data.get("utilization_pct", 0.0)
+            w_filled = min(16, int((min(100.0, w_pct) / 100.0) * 16))
+            w_bar = "█" * w_filled + "░" * (16 - w_filled)
+            u_tokens = w_data.get('used_tokens', 0)
+            l_tokens = w_data.get('limit_tokens', 1000000)
+            add_row(f"Weekly Limit (resets {w_data.get('resets_str', 'unknown')}):")
+            add_pair(f"[{w_bar}]", f"{w_pct:.1f}% ({fmt_short(u_tokens)}/{fmt_short(l_tokens)} tokens)")
+
+            # 2. 5-Hour Limit directly under Weekly Limit
+            f_data = rl["five_hour"]
+            f_pct = f_data.get("utilization_pct", 0.0)
+            f_filled = min(16, int((min(100.0, f_pct) / 100.0) * 16))
+            f_bar = "█" * f_filled + "░" * (16 - f_filled)
+            u_tokens_f = f_data.get('used_tokens', 0)
+            l_tokens_f = f_data.get('limit_tokens', 1000000)
+            add_row(f"5-Hour Limit (resets {f_data.get('resets_str', 'unknown')}):")
+            add_pair(f"[{f_bar}]", f"{f_pct:.1f}% ({fmt_short(u_tokens_f)}/{fmt_short(l_tokens_f)} tokens)")
 
         lines.append(mid_border)
 

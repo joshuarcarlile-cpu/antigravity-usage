@@ -10,11 +10,18 @@ A production-grade, mathematically verified telemetry and cost engine for **Goog
 │ Active Model: gemini-3.8-flash                               │
 │ Provenance: ESTIMATED (0 reported, 97 estimated)             │
 ├──────────────────────────────────────────────────────────────┤
-│ Rate Limits & Quotas:                                        │
-│ Weekly Limit (resets in 4d 17h (Tue 22:00 UTC)):             │
-│ [████████░░░░░░░░] 47.2% (236.0M/500.0M tokens)              │
-│ 5-Hour Limit (resets in 3h 3m):                              │
-│ [████████████░░░░] 78.1% (39.1M/50.0M tokens)                │
+│ Rate Limits & Quotas (Antigravity Service):                  │
+│ [Gemini Models]                                              │
+│   Weekly Limit Remaining (resets in 5d 1h):                  │
+│   [█████████████░░░] 81.4% remaining (18.6% used)            │
+│   5-Hour Limit Remaining (resets in 2h 44m):                 │
+│   [███████░░░░░░░░░] 44.9% remaining (55.1% used)            │
+│                                                              │
+│ [Claude and GPT models]                                      │
+│   Weekly Limit Remaining (resets in 23h 22m):                │
+│   [██████████░░░░░░] 64.4% remaining (35.6% used)            │
+│   5-Hour Limit Remaining (resets in 5h 0m):                  │
+│   [████████████████] 100.0% remaining (0.0% used)            │
 ├──────────────────────────────────────────────────────────────┤
 │ Context Occupancy:                                           │
 │ [█░░░░░░░░░░░░░░░] 109,262 / 1,000,000 (10.9%)               │
@@ -42,6 +49,11 @@ A production-grade, mathematically verified telemetry and cost engine for **Goog
 
 ## Key Features
 
+- **Live Antigravity Quota Service Ingestion**:
+  - Automatically queries the local Antigravity Language Server RPC (`RetrieveUserQuotaSummary`) to extract 100% accurate, live official rate limits matching the IDE's "View Usage" popup.
+  - Distinct tracking for both quota pools: **Gemini Models** and **Claude and GPT models**.
+  - Displays real-time **Weekly Limit Remaining** and **5-Hour Limit Remaining** with live reset countdown timers (`in 5d 1h`, `in 2h 44m`).
+  - Graceful fallback: If the language server is unreachable or disabled, falls back to transcript summation anchored to user account reset schedules.
 - **Dual-Path Token Accounting**:
   - **Reported Path**: Automatically ingests official Gemini `usageMetadata` (`promptTokenCount`, `cachedContentTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`) when present.
   - **Estimated Path**: High-throughput linear single-pass structural tokenization calibrated for Gemini SentencePiece token distributions.

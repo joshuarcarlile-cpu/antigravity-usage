@@ -328,6 +328,65 @@ class TestUsageEngine(unittest.TestCase):
         for line in rendered.split("\n"):
             self.assertEqual(len(usage.strip_ansi(line)), 64, f"Line width violation in: {line}")
 
+    def test_live_service_quota_rendering(self):
+        """14. Assert live service quota groups (Gemini and Claude & GPT) render cleanly at 64 columns."""
+        mock_data = {
+            "account": {"account": "joshua.r.carlile@gmail.com", "source": "google_accounts.json"},
+            "model": {"id": "gemini-3.8-flash", "resolved": True},
+            "provenance": {"mode": "reported", "reported_turns": 1, "estimated_turns": 0, "total_turns": 1},
+            "context_window": {"occupancy_tokens": 1000, "limit_tokens": 1000000, "headroom_tokens": 999000, "utilization_pct": 0.1},
+            "tokens": {"cumulative_input": 1000, "uncached_input": 1000, "cached_input": 0, "cumulative_output": 100, "multimodal_items": 0, "multimodal_tokens": 0},
+            "cost": {"equivalent_usd": 0.05, "currency": "USD", "priced_turns": 1, "total_turns": 1, "assumed_rates": []},
+            "activity": {"wall_duration_seconds": 12.0, "total_steps": 5, "model_turns": 1, "tool_counts": {}},
+            "rate_limits": {
+                "mode": "live_service",
+                "source": "language_server_live",
+                "account": "joshua.r.carlile@gmail.com",
+                "groups": [
+                    {
+                        "name": "Gemini Models",
+                        "weekly": {
+                            "display_name": "Weekly Limit Remaining",
+                            "remaining_pct": 84.0,
+                            "utilization_pct": 16.0,
+                            "resets_str": "in 5d 1h"
+                        },
+                        "five_hour": {
+                            "display_name": "Five Hour Limit Remaining",
+                            "remaining_pct": 63.0,
+                            "utilization_pct": 37.0,
+                            "resets_str": "in 2h 54m"
+                        }
+                    },
+                    {
+                        "name": "Claude and GPT models",
+                        "weekly": {
+                            "display_name": "Weekly Limit Remaining",
+                            "remaining_pct": 64.0,
+                            "utilization_pct": 36.0,
+                            "resets_str": "in 23h 31m"
+                        },
+                        "five_hour": {
+                            "display_name": "Five Hour Limit Remaining",
+                            "remaining_pct": 100.0,
+                            "utilization_pct": 0.0,
+                            "resets_str": "idle"
+                        }
+                    }
+                ]
+            }
+        }
+        rendered = usage.render_box(mock_data, width=64, cid="test-live-box")
+        self.assertIn("Rate Limits & Quotas (Antigravity Service):", rendered)
+        self.assertIn("[Gemini Models]", rendered)
+        self.assertIn("Weekly Limit Remaining (resets in 5d 1h):", rendered)
+        self.assertIn("5-Hour Limit Remaining (resets in 2h 54m):", rendered)
+        self.assertIn("[Claude and GPT models]", rendered)
+        self.assertIn("Weekly Limit Remaining (resets in 23h 31m):", rendered)
+        self.assertIn("5-Hour Limit Remaining:", rendered)
+        for line in rendered.split("\n"):
+            self.assertEqual(len(usage.strip_ansi(line)), 64, f"Line width violation: {line}")
+
 
 if __name__ == "__main__":
     unittest.main()
