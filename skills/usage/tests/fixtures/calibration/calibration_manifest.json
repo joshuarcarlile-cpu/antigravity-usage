@@ -1,0 +1,10 @@
+{
+  "model": "gemini-2.5-flash",
+  "verified_on": "2026-09-17",
+  "samples": {
+    "prose": { "file": "prose.txt", "ground_truth_tokens": 1450, "tolerance_pct": 0.08 },
+    "code": { "file": "code.kt", "ground_truth_tokens": 980, "tolerance_pct": 0.12 },
+    "json": { "file": "tool_output.json", "ground_truth_tokens": 2750, "tolerance_pct": 0.14 },
+    "mixed": { "file": "mixed_transcript.txt", "ground_truth_tokens": 4120, "tolerance_pct": 0.12 }
+  }
+}

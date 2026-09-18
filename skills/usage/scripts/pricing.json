@@ -1,0 +1,75 @@
+{
+  "gemini-3.8-flash": {
+    "context_limit": 1000000,
+    "windows": [
+      {
+        "effective_from": null,
+        "effective_until": "2026-12-31T23:59:59Z",
+        "input_rate": 0.75,
+        "cached_rate": 0.075,
+        "cached_rate_assumed": true,
+        "output_rate": 3.75,
+        "source": "Google Cloud Pricing (Introductory)",
+        "verified_on": "2026-09-17"
+      },
+      {
+        "effective_from": "2027-01-01T00:00:00Z",
+        "effective_until": null,
+        "input_rate": 1.50,
+        "cached_rate": 0.15,
+        "cached_rate_assumed": true,
+        "output_rate": 7.50,
+        "source": "Google Cloud Pricing (Standard)",
+        "verified_on": "2026-09-17"
+      }
+    ]
+  },
+  "gemini-2.5-pro": {
+    "context_limit": 2000000,
+    "long_prompt_threshold": 200000,
+    "windows": [
+      {
+        "effective_from": null,
+        "effective_until": null,
+        "input_rate": 1.25,
+        "cached_rate": 0.125,
+        "output_rate": 10.00,
+        "long_input_rate": 2.50,
+        "long_cached_rate": 0.25,
+        "long_output_rate": 15.00,
+        "source": "ai.google.dev",
+        "verified_on": "2026-09-17"
+      }
+    ]
+  },
+  "gemini-2.5-flash-lite": {
+    "context_limit": 1000000,
+    "windows": [
+      {
+        "effective_from": null,
+        "effective_until": null,
+        "input_rate": 0.075,
+        "cached_rate": 0.0075,
+        "cached_rate_assumed": true,
+        "output_rate": 0.30,
+        "source": "ai.google.dev (Gemini 2.5 Flash-Lite Paid Tier)",
+        "verified_on": "2026-09-17"
+      }
+    ]
+  },
+  "gemini-3.7-flash": {
+    "context_limit": 1000000,
+    "windows": [
+      {
+        "effective_from": null,
+        "effective_until": null,
+        "input_rate": 0.075,
+        "cached_rate": 0.0075,
+        "cached_rate_assumed": true,
+        "output_rate": 0.30,
+        "source": "Google Cloud Pricing",
+        "verified_on": "2026-09-17"
+      }
+    ]
+  }
+}

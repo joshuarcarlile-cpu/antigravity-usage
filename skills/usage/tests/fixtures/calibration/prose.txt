@@ -1,0 +1,45 @@
+# Distributed Systems and Telemetry Architecture
+
+Telemetry collection in modern agentic environments requires clean isolation between execution planes and observation planes. When an autonomous developer agent interacts with an operating system or network interface, every command execution, file system read, and subagent invocation generates observable metadata that must be parsed without altering execution semantics.
+
+## 1. High-Throughput Stream Ingestion
+
+Streaming telemetry pipelines must maintain deterministic throughput under unpredictable workloads. In distributed architectures, logs and metrics are forwarded across resilient message buses. Each message payload contains structural headers, trace identifiers, span contexts, and payload attributes encoded in compact representations.
+
+The primary challenge in local agent runtime observation is handling asynchronous state compaction. When token contexts approach window boundaries, compaction algorithms discard intermediate reasoning traces while preserving critical state summaries. Telemetry collectors must decouple the raw stream from the compacted model context to ensure that cumulative billing reflects all intermediate inferences, regardless of whether they survive compaction.
+
+## 2. Invariant Reconciliation
+
+A resilient accounting engine enforces mathematical reconciliation across all reporting vectors. Let uncached prompt tokens denote inputs requiring full attention computation, cached prompt tokens denote inputs resolved via prefix cache tables, and output tokens denote generations across thought blocks and candidate responses. The total observed tokens must strictly satisfy the sum of uncached, cached, and output tokens.
+
+Discrepancies indicate either unobserved streaming chunks, dropped socket frames, or unannounced API schema transformations. When such conditions occur, the engine emits non-fatal telemetry warnings while preserving the monotonic consistency of the cumulative counter.
+
+## 3. Storage Hierarchy and Multi-Window Concurrency
+
+In multi-agent and multi-window developer environments, concurrent processes frequently access shared telemetry caches. Without file locking or time-based exclusion, race conditions occur when one process reads partially flushed state written by another. By enforcing a sixty-second in-flight exclusion window, active processes maintain an isolated scratchpad in memory, committing to disk only after transactional finalization.
+
+Cache invalidation must incorporate deterministic cryptographic digests. Hashing both the engine implementation and the pricing matrix guarantees that any update to underlying accounting logic triggers an immediate re-evaluation of historical entries, eliminating cache pollution from stale pricing tables.
+
+## 4. Operational Guardrails
+
+Operational visibility should never incur computational overhead that degrades developer experience. Lightweight token estimation algorithms, parameterized by structural character frequencies and subword distribution models, provide near-instantaneous feedback with minimal CPU utilization. By combining empirical schema probes with rigorous test suites, telemetry engines deliver actionable cost transparency across all project workspaces.
+
+# Distributed Systems and Telemetry Architecture
+
+Telemetry collection in modern agentic environments requires clean isolation between execution planes and observation planes. When an autonomous developer agent interacts with an operating system or network interface, every command execution, file system read, and subagent invocation generates observable metadata that must be parsed without altering execution semantics.
+
+## 1. High-Throughput Stream Ingestion
+
+Streaming telemetry pipelines must maintain deterministic throughput under unpredictable workloads. In distributed architectures, logs and metrics are forwarded across resilient message buses. Each message payload contains structural headers, trace identifiers, span contexts, and payload attributes encoded in compact representations.
+
+The primary challenge in local agent runtime observation is handling asynchronous state compaction. When token contexts approach window boundaries, compaction algorithms discard intermediate reasoning traces while preserving critical state summaries. Telemetry collectors must decouple the raw stream from the compacted model context to ensure that cumulative billing reflects all intermediate inferences, regardless of whether they survive compaction.
+
+## 2. Invariant Reconciliation
+
+A resilient accounting engine enforces mathematical reconciliation across all reporting vectors. Let uncached prompt tokens denote inputs requiring full attention computation, cached prompt tokens denote inputs resolved via prefix cache tables, and output tokens denote generations across thought blocks and candidate responses. The total observed tokens must strictly satisfy the sum of uncached, cached, and output tokens.
+
+Discrepancies indicate either unobserved streaming chunks, dropped socket frames, or unannounced API schema transformations. When such conditions occur, the engine emits non-fatal telemetry warnings while preserving the monotonic consistency of the cumulative counter.
+
+## 3. Storage Hierarchy and Multi-Window Concurrency
+
+In multi-agent and multi-window developer environments, concurrent processes frequently access shared telemetry caches. Without file locking or time-based exclusion, race conditions occur when one process reads partially flushed state written by another. By enforcing a sixty-second in-flight exclusion window, active processes maintain an isolated scratchpad in memory, committing to disk only after transactional finalization.

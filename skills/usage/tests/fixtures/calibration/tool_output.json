@@ -1,0 +1,245 @@
+{
+  "status": "SUCCESS",
+  "records": [
+    {
+      "record_id": "event_0000",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-0",
+      "latency_ms": 14.5,
+      "query": "SELECT * FROM telemetry WHERE id = 0 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 128,
+        "io_ops": 450
+      }
+    },
+    {
+      "record_id": "event_0001",
+      "status": "CACHED",
+      "cluster": "us-east1-node-1",
+      "latency_ms": 15.5,
+      "query": "SELECT * FROM telemetry WHERE id = 1 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 138,
+        "io_ops": 470
+      }
+    },
+    {
+      "record_id": "event_0002",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-2",
+      "latency_ms": 16.5,
+      "query": "SELECT * FROM telemetry WHERE id = 2 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 148,
+        "io_ops": 490
+      }
+    },
+    {
+      "record_id": "event_0003",
+      "status": "CACHED",
+      "cluster": "us-east1-node-3",
+      "latency_ms": 17.5,
+      "query": "SELECT * FROM telemetry WHERE id = 3 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 158,
+        "io_ops": 510
+      }
+    },
+    {
+      "record_id": "event_0004",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-0",
+      "latency_ms": 18.5,
+      "query": "SELECT * FROM telemetry WHERE id = 4 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 168,
+        "io_ops": 530
+      }
+    },
+    {
+      "record_id": "event_0005",
+      "status": "CACHED",
+      "cluster": "us-east1-node-1",
+      "latency_ms": 19.5,
+      "query": "SELECT * FROM telemetry WHERE id = 5 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 178,
+        "io_ops": 550
+      }
+    },
+    {
+      "record_id": "event_0006",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-2",
+      "latency_ms": 20.5,
+      "query": "SELECT * FROM telemetry WHERE id = 6 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 188,
+        "io_ops": 570
+      }
+    },
+    {
+      "record_id": "event_0007",
+      "status": "CACHED",
+      "cluster": "us-east1-node-3",
+      "latency_ms": 21.5,
+      "query": "SELECT * FROM telemetry WHERE id = 7 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 198,
+        "io_ops": 590
+      }
+    },
+    {
+      "record_id": "event_0008",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-0",
+      "latency_ms": 22.5,
+      "query": "SELECT * FROM telemetry WHERE id = 8 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 208,
+        "io_ops": 610
+      }
+    },
+    {
+      "record_id": "event_0009",
+      "status": "CACHED",
+      "cluster": "us-east1-node-1",
+      "latency_ms": 23.5,
+      "query": "SELECT * FROM telemetry WHERE id = 9 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 218,
+        "io_ops": 630
+      }
+    },
+    {
+      "record_id": "event_0010",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-2",
+      "latency_ms": 24.5,
+      "query": "SELECT * FROM telemetry WHERE id = 10 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 228,
+        "io_ops": 650
+      }
+    },
+    {
+      "record_id": "event_0011",
+      "status": "CACHED",
+      "cluster": "us-east1-node-3",
+      "latency_ms": 25.5,
+      "query": "SELECT * FROM telemetry WHERE id = 11 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 238,
+        "io_ops": 670
+      }
+    },
+    {
+      "record_id": "event_0012",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-0",
+      "latency_ms": 26.5,
+      "query": "SELECT * FROM telemetry WHERE id = 12 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 248,
+        "io_ops": 690
+      }
+    },
+    {
+      "record_id": "event_0013",
+      "status": "CACHED",
+      "cluster": "us-east1-node-1",
+      "latency_ms": 27.5,
+      "query": "SELECT * FROM telemetry WHERE id = 13 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 258,
+        "io_ops": 710
+      }
+    },
+    {
+      "record_id": "event_0014",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-2",
+      "latency_ms": 28.5,
+      "query": "SELECT * FROM telemetry WHERE id = 14 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 268,
+        "io_ops": 730
+      }
+    },
+    {
+      "record_id": "event_0015",
+      "status": "CACHED",
+      "cluster": "us-east1-node-3",
+      "latency_ms": 29.5,
+      "query": "SELECT * FROM telemetry WHERE id = 15 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 278,
+        "io_ops": 750
+      }
+    },
+    {
+      "record_id": "event_0016",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-0",
+      "latency_ms": 30.5,
+      "query": "SELECT * FROM telemetry WHERE id = 16 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 288,
+        "io_ops": 770
+      }
+    },
+    {
+      "record_id": "event_0017",
+      "status": "CACHED",
+      "cluster": "us-east1-node-1",
+      "latency_ms": 31.5,
+      "query": "SELECT * FROM telemetry WHERE id = 17 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 298,
+        "io_ops": 790
+      }
+    },
+    {
+      "record_id": "event_0018",
+      "status": "COMPLETED",
+      "cluster": "us-east1-node-2",
+      "latency_ms": 32.5,
+      "query": "SELECT * FROM telemetry WHERE id = 18 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 308,
+        "io_ops": 810
+      }
+    },
+    {
+      "record_id": "event_0019",
+      "status": "CACHED",
+      "cluster": "us-east1-node-3",
+      "latency_ms": 33.5,
+      "query": "SELECT * FROM telemetry WHERE id = 19 AND status = 'ACTIVE'",
+      "metrics": {
+        "cpu": 0.45,
+        "mem_mb": 318,
+        "io_ops": 830
+      }
+    }
+  ]
+}
