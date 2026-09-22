@@ -1,8 +1,9 @@
 # Antigravity `/usage`
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/joshuarcarlile-cpu/antigravity-usage/releases)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-15%20passed-brightgreen.svg)](skills/usage/tests)
+[![Tests](https://img.shields.io/badge/tests-18%20passed-brightgreen.svg)](skills/usage/tests)
 
 Real-time session telemetry, token breakdown, live IDE rate limits, and cost engine for **Google Antigravity**.
 
@@ -80,6 +81,7 @@ usage --compact
 # [Telemetry] Model: gemini-3.8-flash | Cost: $0.0480 | Turns: 15 (778s)
 # Context: [█░░░░░░░░░] 17,397 / 1,000,000 (1.7% used, 983k free)
 # Gemini Models: Weekly 20% (in 19h 27m) | 5-Hour 96% (in 4h 33m)
+# Claude and GPT models: Weekly 13% (in 3d 7h) | 5-Hour 100% (idle)
 
 # Full aesthetic box card
 usage

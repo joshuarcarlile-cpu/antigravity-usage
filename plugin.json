@@ -1,6 +1,6 @@
 {
   "name": "antigravity-usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Production-grade, mathematically verified /usage and /cost telemetry engine for Google Antigravity.",
   "author": "Joshua Carlile",
   "license": "MIT",
