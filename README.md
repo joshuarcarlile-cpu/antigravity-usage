@@ -69,12 +69,19 @@ Once installed, simply type `/usage` in any Antigravity conversation or run `usa
 
 ### In Antigravity Chat
 Type `/usage` or `/cost` in any conversation:
-- `/usage` — Show telemetry for the active session.
+- `/usage` — Show token-efficient compact telemetry (~80 tokens).
+- `/usage --full` — Display full aesthetic box card (~450 tokens).
 - `/usage --daily` — Aggregate today's usage across all sessions.
 
 ### In Terminal (CLI)
 ```bash
-# Inspect the active session
+# Ultra-low token compact summary (~80 tokens with 10-char mini bar)
+usage --compact
+# [Telemetry] Model: gemini-3.8-flash | Cost: $0.0480 | Turns: 15 (778s)
+# Context: [█░░░░░░░░░] 17,397 / 1,000,000 (1.7% used, 983k free)
+# Gemini Models: Weekly 20% (in 19h 27m) | 5-Hour 96% (in 4h 33m)
+
+# Full aesthetic box card
 usage
 
 # Rolling daily total across all sessions today
@@ -91,6 +98,7 @@ usage --conversation-id <id>
 
 ## Features
 
+- **Ultra-Low Token Footprint**: High-density `--compact` mode delivers instant session metrics in ~80 tokens (85% reduction vs decorative boxes).
 - **Live IDE Quota Sync**: Ingests real-time rate limits and reset countdowns directly from the Antigravity Language Server RPC.
 - **Context Window & Headroom**: Visual progress bar tracking token occupancy and remaining tokens before compaction.
 - **Dual-Path Accuracy**: Ingests official `usageMetadata` when available, with calibrated SentencePiece estimation fallback.
@@ -103,6 +111,7 @@ usage --conversation-id <id>
 
 | Flag | Description |
 | :--- | :--- |
+| `--compact` | Output high-density, low-token summary (~80 tokens) |
 | `--daily` | Aggregate token consumption and cost across all sessions today |
 | `--json` | Output machine-readable JSON contract (v1.0.0) |
 | `--conversation-id <id>` | Inspect a specific session transcript |
@@ -118,28 +127,43 @@ usage --conversation-id <id>
 ## Alternative Installation
 
 <details>
-<summary><b>As an Antigravity Global Plugin</b></summary>
+<summary><b>As an Antigravity Global Skill</b></summary>
 
-Clone directly into your Antigravity plugins directory:
+Clone or deploy directly into your Antigravity skills directory:
 
 ```bash
-# Windows
-git clone https://github.com/joshuarcarlile-cpu/antigravity-usage.git "$env:USERPROFILE\.gemini\config\plugins\antigravity-usage"
+# Windows (PowerShell)
+git clone https://github.com/joshuarcarlile-cpu/antigravity-usage.git "$env:TEMP\antigravity-usage"
+Copy-Item -Recurse -Force "$env:TEMP\antigravity-usage\skills\usage" "$env:USERPROFILE\.gemini\config\skills\usage"
 
-# macOS / Linux
-git clone https://github.com/joshuarcarlile-cpu/antigravity-usage.git ~/.gemini/config/plugins/antigravity-usage
+# macOS / Linux (Bash)
+git clone https://github.com/joshuarcarlile-cpu/antigravity-usage.git /tmp/antigravity-usage
+cp -R /tmp/antigravity-usage/skills/usage ~/.gemini/config/skills/usage
 ```
+</details>
+
+<details>
+<summary><b>Developer Mode (Live Repo Junction / Symlink)</b></summary>
+
+For local engine development, link your repository directly into the global skill folder:
+
+```bash
+# Windows (PowerShell - creates NTFS Directory Junction, no admin required)
+.\install.ps1 -Dev
+
+# macOS / Linux (Bash - creates symlink)
+./install.sh --dev
+```
+Edits inside `skills/usage/` reflect live across all terminal sessions and Antigravity chat without reinstalling.
 </details>
 
 <details>
 <summary><b>Project Workspace (Zero-Install for Teams)</b></summary>
 
-Copy the skill and rule into your repo's `.agents/` folder:
+Copy the skill into your repo's `.agents/` folder:
 
 ```text
 .agents/
-├── rules/
-│   └── telemetry.md
 └── skills/
     └── usage/
         ├── SKILL.md

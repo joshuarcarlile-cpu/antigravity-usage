@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
 set -e
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_PATH="$DIR/../skills/usage/scripts/usage.py"
+# 1. Check if current working directory (or any ancestor) is the dev repo
+SCRIPT_PATH=""
+CURR="${PWD}"
+while [ -n "${CURR}" ] && [ "${CURR}" != "/" ]; do
+    if [ -f "${CURR}/skills/usage/scripts/usage.py" ] && [ -f "${CURR}/plugin.json" ]; then
+        SCRIPT_PATH="${CURR}/skills/usage/scripts/usage.py"
+        break
+    fi
+    CURR="$(dirname "${CURR}")"
+done
 
-if [ ! -f "$SCRIPT_PATH" ]; then
-    SCRIPT_PATH="$HOME/.gemini/config/plugins/antigravity-usage/skills/usage/scripts/usage.py"
+if [ -z "${SCRIPT_PATH}" ] || [ ! -f "${SCRIPT_PATH}" ]; then
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SCRIPT_PATH="$DIR/../skills/usage/scripts/usage.py"
 fi
 
 if [ ! -f "$SCRIPT_PATH" ]; then
     SCRIPT_PATH="$HOME/.gemini/config/skills/usage/scripts/usage.py"
+fi
+
+if [ ! -f "$SCRIPT_PATH" ]; then
+    SCRIPT_PATH="$HOME/.gemini/config/plugins/antigravity-usage/skills/usage/scripts/usage.py"
 fi
 
 if [ ! -f "$SCRIPT_PATH" ]; then

@@ -437,7 +437,40 @@ class TestUsageEngine(unittest.TestCase):
         self.assertIsInstance(p, str)
         self.assertTrue(p.endswith("account_resets.json"))
 
+    def test_render_compact_low_token_invariants(self):
+        """17. Assert render_compact produces high-density output without box-drawing bloat."""
+        mock_data = {
+            "model": {"id": "gemini-3.8-flash"},
+            "cost": {"equivalent_usd": Decimal("0.0480")},
+            "activity": {"model_turns": 15, "wall_duration_seconds": 120.0},
+            "context_window": {
+                "occupancy_tokens": 7289,
+                "limit_tokens": 1000000,
+                "headroom_tokens": 992711,
+                "utilization_pct": 0.7
+            },
+            "rate_limits": {
+                "groups": [
+                    {
+                        "name": "Gemini Models",
+                        "weekly": {"remaining_pct": 20.0, "resets_str": "in 19h 27m"},
+                        "five_hour": {"remaining_pct": 96.0, "resets_str": "in 4h 33m"}
+                    }
+                ]
+            }
+        }
+        compact = usage.render_compact(mock_data, cid="test-compact")
+        self.assertIn("[Telemetry] Model: gemini-3.8-flash", compact)
+        self.assertIn("Cost: $0.0480", compact)
+        self.assertIn("Context: [█░░░░░░░░░] 7,289 / 1,000,000 (0.7% used, 993k free)", compact)
+        self.assertIn("Gemini Models: Weekly 20%", compact)
+        self.assertNotIn("┌", compact)
+        self.assertNotIn("│", compact)
+        self.assertNotIn("─", compact)
+        self.assertLess(len(compact), 350)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -1,9 +1,12 @@
 @echo off
 setlocal
 
-set SCRIPT_PATH=%~dp0..\skills\usage\scripts\usage.py
-if not exist "%SCRIPT_PATH%" set SCRIPT_PATH=%USERPROFILE%\.gemini\config\plugins\antigravity-usage\skills\usage\scripts\usage.py
+set SCRIPT_PATH=
+if exist "%CD%\skills\usage\scripts\usage.py" if exist "%CD%\plugin.json" set SCRIPT_PATH=%CD%\skills\usage\scripts\usage.py
+if not defined SCRIPT_PATH if exist "%CD%\..\skills\usage\scripts\usage.py" if exist "%CD%\..\plugin.json" set SCRIPT_PATH=%CD%\..\skills\usage\scripts\usage.py
+if not defined SCRIPT_PATH set SCRIPT_PATH=%~dp0..\skills\usage\scripts\usage.py
 if not exist "%SCRIPT_PATH%" set SCRIPT_PATH=%USERPROFILE%\.gemini\config\skills\usage\scripts\usage.py
+if not exist "%SCRIPT_PATH%" set SCRIPT_PATH=%USERPROFILE%\.gemini\config\plugins\antigravity-usage\skills\usage\scripts\usage.py
 
 if not exist "%SCRIPT_PATH%" (
     echo Error: usage.py script not found. 1>&2

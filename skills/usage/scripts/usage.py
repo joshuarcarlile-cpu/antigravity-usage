@@ -1466,6 +1466,65 @@ def render_box(data: dict, width: int = DEFAULT_BOX_WIDTH, cid: str = "") -> str
     return "\n".join(lines)
 
 
+def render_compact(data: dict, cid: str = "") -> str:
+    """Render high-density, low-token summary without unicode borders or box padding."""
+    lines = []
+
+    # 1. Header / Session Line
+    model_name = data.get("model", {}).get("id", "unknown")
+    cost = data.get("cost", {}).get("equivalent_usd", Decimal("0.0"))
+    turns = data.get("activity", {}).get("model_turns", 0)
+    dur = data.get("activity", {}).get("wall_duration_seconds", 0.0)
+    lines.append(f"[Telemetry] Model: {model_name} | Cost: ${cost:.4f} | Turns: {turns} ({dur:.0f}s)")
+
+    # 2. Context Window Line with 10-char mini bar
+    cw = data.get("context_window", {})
+    occ = cw.get("occupancy_tokens", 0)
+    limit = cw.get("limit_tokens", 1000000)
+    headroom = cw.get("headroom_tokens", max(0, limit - occ))
+    util_pct = cw.get("utilization_pct", 0.0)
+
+    filled = min(10, max(0, int(round((util_pct / 100.0) * 10)))) if util_pct > 0 else 0
+    if util_pct > 0 and filled == 0:
+        filled = 1
+    bar = "█" * filled + "░" * (10 - filled)
+
+    if headroom >= 1_000_000:
+        free_str = f"{headroom / 1_000_000:.1f}M"
+    elif headroom >= 1_000:
+        free_str = f"{headroom / 1_000:.0f}k"
+    else:
+        free_str = str(headroom)
+
+    lines.append(f"Context: [{bar}] {occ:,} / {limit:,} ({util_pct:.1f}% used, {free_str} free)")
+
+    # 3. Rate Limits
+    rl = data.get("rate_limits")
+    if rl:
+        groups = rl.get("groups")
+        if groups:
+            for g in groups:
+                name = g.get("name", "Quota")
+                w_pct = g.get("weekly", {}).get("remaining_pct", 0)
+                w_str = g.get("weekly", {}).get("resets_str", "idle")
+                h_pct = g.get("five_hour", {}).get("remaining_pct", 0)
+                h_str = g.get("five_hour", {}).get("resets_str", "idle")
+                lines.append(f"{name}: Weekly {w_pct:.0f}% ({w_str}) | 5-Hour {h_pct:.0f}% ({h_str})")
+        else:
+            w_pct = rl.get("weekly", {}).get("remaining_pct", 0)
+            w_str = rl.get("weekly", {}).get("resets_str", "idle")
+            h_pct = rl.get("five_hour", {}).get("remaining_pct", 0)
+            h_str = rl.get("five_hour", {}).get("resets_str", "idle")
+            lines.append(f"Quota: Weekly {w_pct:.0f}% ({w_str}) | 5-Hour {h_pct:.0f}% ({h_str})")
+
+    # 4. Daily Totals (if available)
+    daily = data.get("daily_totals")
+    if daily:
+        lines.append(f"Daily (Today): {daily['active_sessions']} sessions | {daily['cumulative_tokens']:,} tokens | ${daily['equivalent_usd']:.4f}")
+
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Google Antigravity Production Telemetry & Cost Engine")
     parser.add_argument("--conversation-id", type=str, help="Conversation UUID to inspect")
@@ -1475,6 +1534,7 @@ def main():
     parser.add_argument("--reset-time", type=str, help="Weekly limit reset time UTC (e.g. 18:00)")
     parser.add_argument("--save-reset", action="store_true", help="Save the reset schedule to ~/.gemini/account_resets.json for the active account")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON v1.0.0")
+    parser.add_argument("--compact", action="store_true", help="Output high-density, low-token summary")
     parser.add_argument("--daily", action="store_true", help="Include daily aggregation totals")
     parser.add_argument("--width", type=int, default=DEFAULT_BOX_WIDTH, help="Terminal box width (default 64)")
     parser.add_argument("--no-cache", action="store_true", help="Bypass reading and writing cache")
@@ -1517,14 +1577,17 @@ def main():
             sys.exit(1)
 
     if cid and not transcript_path:
-        brain_root = get_brain_root()
-        candidate_full = os.path.join(brain_root, cid, ".system_generated", "logs", "transcript_full.jsonl")
-        candidate_std = os.path.join(brain_root, cid, ".system_generated", "logs", "transcript.jsonl")
-        if os.path.exists(candidate_full):
-            transcript_path = candidate_full
-        elif os.path.exists(candidate_std):
-            transcript_path = candidate_std
-        else:
+        for brain_root in get_brain_roots():
+            candidate_full = os.path.join(brain_root, cid, ".system_generated", "logs", "transcript_full.jsonl")
+            candidate_std = os.path.join(brain_root, cid, ".system_generated", "logs", "transcript.jsonl")
+            if os.path.exists(candidate_full):
+                transcript_path = candidate_full
+                break
+            elif os.path.exists(candidate_std):
+                transcript_path = candidate_std
+                break
+
+        if not transcript_path:
             if args.json:
                 print(json.dumps({"error": f"Transcript for conversation {cid} not found"}, indent=2))
             else:
@@ -1581,6 +1644,8 @@ def main():
 
     if args.json:
         print(json.dumps(payload, indent=2))
+    elif args.compact:
+        print(render_compact(session_data, cid=cid or ""))
     else:
         if auto_detected:
             print(f"{ANSI_DIM}Target: {cid} (auto-detected most recent; use --conversation-id to pin){ANSI_RESET}\n")
